@@ -220,6 +220,41 @@ FROM read_parquet('{{PARQUET}}/precios_compra.parquet') pc
 LEFT JOIN read_parquet('{{PARQUET}}/proveedores.parquet') pr ON pr.proveedor_id = pc.proveedor_id
 QUALIFY ROW_NUMBER() OVER (PARTITION BY pc.articulo_id ORDER BY pc.predeterminado DESC, pc.precio_ucom ASC NULLS LAST) = 1;
 
+-- Clase ABC por venta (importe sin IVA de remisiones) de los ultimos 90 dias: A+ / A / B / C segun la venta acumulada
+-- (cortes en abc_param). La clase de un articulo se decide con la venta acumulada ANTES de incluirlo.
+CREATE TABLE abc_articulo AS
+WITH v AS (
+  SELECT articulo_id, SUM(importe) AS venta, SUM(unidades) AS unidades
+  FROM fact_remision_det, param h WHERE fecha > h.hoy - 90 GROUP BY 1 HAVING SUM(importe) > 0
+), r AS (
+  SELECT *, (SUM(venta) OVER (ORDER BY venta DESC, articulo_id) - venta) / SUM(venta) OVER () AS acum_previa,
+         SUM(venta) OVER (ORDER BY venta DESC, articulo_id) / SUM(venta) OVER () AS acum
+  FROM v
+)
+SELECT r.articulo_id, r.venta, r.unidades, r.acum,
+       (SELECT p.clase FROM abc_param p WHERE r.acum_previa < p.corte ORDER BY p.orden LIMIT 1) AS clase
+FROM r;
+
+-- Variabilidad semanal de la salida de ruta (13 semanas, con semanas en cero): base del stock de seguridad.
+CREATE TABLE desv_semanal AS
+WITH m AS (
+  SELECT articulo_id, fecha,  unidades AS u FROM fact_remision_det
+  UNION ALL SELECT articulo_id, fecha,  unidades FROM fact_cambio_det
+  UNION ALL SELECT articulo_id, fecha, -unidades FROM fact_devolucion_det
+), s AS (
+  SELECT articulo_id, CAST(date_diff('day', fecha, h.hoy) // 7 AS INTEGER) AS sem, SUM(u) AS u
+  FROM m, param h WHERE fecha > h.hoy - 91 AND fecha <= h.hoy GROUP BY 1, 2
+), art AS (SELECT DISTINCT articulo_id FROM s), semanas AS (SELECT unnest(range(0, 13)) AS sem)
+SELECT a.articulo_id, STDDEV_SAMP(GREATEST(COALESCE(s.u, 0), 0)) AS desv_semanal
+FROM art a CROSS JOIN semanas w LEFT JOIN s ON s.articulo_id = a.articulo_id AND s.sem = w.sem
+GROUP BY a.articulo_id;
+
+-- Primer movimiento de ruta de cada articulo (para marcar productos nuevos).
+CREATE TABLE primera_mov AS
+SELECT articulo_id, MIN(fecha) AS primera_mov FROM (
+  SELECT articulo_id, fecha FROM fact_remision_det UNION ALL SELECT articulo_id, fecha FROM fact_cambio_det
+) GROUP BY 1;
+
 -- Una fila por articulo: existencias, demanda, compras en camino y proveedor.
 CREATE TABLE art_inventario AS
 WITH g AS (SELECT articulo_id, SUM(existencia) AS existencia, SUM(comprometido) AS comprometido, SUM(valor) AS valor
@@ -232,12 +267,19 @@ SELECT a.articulo_id, a.clave, a.nombre, a.linea,
        COALESCE(g.valor, 0) + COALESCE(c.valor, 0) AS valor_inventario,
        COALESCE(d.dem_diaria, 0) AS dem_diaria, d.ultima_venta,
        COALESCE(t.en_transito, 0) AS en_transito, COALESCE(t.ordenes, 0) AS ordenes_pendientes,
-       p.proveedor, p.minimo_ucom, p.contenido, p.precio_ucom
+       p.proveedor, p.minimo_ucom, p.contenido, p.precio_ucom,
+       COALESCE(ab.clase, CASE WHEN d.articulo_id IS NOT NULL THEN 'C' END) AS clase_abc, COALESCE(ab.venta, 0) AS venta_90d,
+       COALESCE(sd.desv_semanal, 0) AS desv_semanal,
+       COALESCE((SELECT z FROM abc_param WHERE clase = COALESCE(ab.clase, CASE WHEN d.articulo_id IS NOT NULL THEN 'C' END)), 0) AS z,
+       pm.primera_mov
 FROM dim_articulo a
 LEFT JOIN g ON g.articulo_id = a.articulo_id
 LEFT JOIN c ON c.articulo_id = a.articulo_id
 LEFT JOIN demanda_ruta d ON d.articulo_id = a.articulo_id
 LEFT JOIN compra_en_transito t ON t.articulo_id = a.articulo_id
 LEFT JOIN prov_principal p ON p.articulo_id = a.articulo_id
+LEFT JOIN abc_articulo ab ON ab.articulo_id = a.articulo_id
+LEFT JOIN desv_semanal sd ON sd.articulo_id = a.articulo_id
+LEFT JOIN primera_mov pm ON pm.articulo_id = a.articulo_id
 WHERE a.estatus = 'A'
   AND (g.articulo_id IS NOT NULL OR c.articulo_id IS NOT NULL OR d.articulo_id IS NOT NULL OR t.articulo_id IS NOT NULL);

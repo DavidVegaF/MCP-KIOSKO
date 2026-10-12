@@ -31,3 +31,12 @@ El **almacén general** surte a las camionetas con traspasos. El canal de venta 
 
 ## Fuera de alcance por ahora
 Importes con IVA, costos/márgenes, traspasos almacén general → camionetas, ABC/inventario/compras (se portan del original).
+
+## Estacionalidad y clase ABC (sugerido de compra)
+
+- **Estacionalidad**: la ruta formal tiene pocos meses de historia, asi que el perfil mensual (`[estacionalidad]` del toml, 1.0 = mes normal)
+  se define a mano (propuesta inicial derivada de un ano de ventas de DTODO). Factor = indice de los proximos (entrega + cobertura) dias /
+  indice de la ventana 50/30/20 que midio la demanda, acotado a 0.5-2.0. Herramienta `estacionalidad`; se apaga con `estacionalidad=False`.
+- **ABC** (`[abc]`): por venta sin IVA de 90 dias; A+ 0-20 %, A 20-80 %, B 80-95 %, C resto (cortes configurables). Herramienta `abc`.
+- **Stock de seguridad** = z(clase) x desviacion estandar semanal (13 semanas, con semanas en cero) x raiz(entrega/7); z A+ 1.65, A 1.28, B 0.84, C 0.5.
+- Articulos con menos de 30 dias de historia se marcan `nuevo (<30 d)`: su demanda no es confiable.

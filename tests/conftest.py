@@ -41,6 +41,10 @@ conceptos_devolucion = [7972]
 conceptos_cambio = [7974]
 almacenes_excluidos = [1]
 almacen_general = 1
+[estacionalidad]
+10 = 1.0
+11 = 1.5
+12 = 1.5
 """)
     # catalogo de kioscos: 14109 nuevo / viejo 1409; 12067; viejo 54059 repetido (ambiguo); cafeteria 0,0
     _w(pqd, "dim_kiosko", {

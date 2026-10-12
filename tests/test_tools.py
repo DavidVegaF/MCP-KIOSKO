@@ -33,7 +33,7 @@ def test_herramientas_registradas(empresa):
     nombres = {t.name for t in run(construir_mcp(empresa).list_tools())}
     assert nombres == {"diccionario", "ventas", "ranking_camionetas", "ranking_vendedores", "productos_ruta",
                        "devoluciones_ruta", "kiosko_geolocalizar", "visitas", "articulo", "calidad_datos", "sql",
-                       "existencias", "sugerido_compra", "sin_movimiento", "stock_camioneta", "cambios_ruta", "canjes"}
+                       "existencias", "sugerido_compra", "sin_movimiento", "stock_camioneta", "cambios_ruta", "canjes", "estacionalidad", "abc"}
 
 
 def test_ventas_por_camioneta(empresa):
@@ -136,7 +136,7 @@ def test_http_cliente_mcp_real(servidor):
                 res = await s.call_tool("ranking_camionetas", {"desde": "2026-10-01", "hasta": "2026-10-03"})
                 return len(tools.tools), texto(res)
     n, out = run(go())
-    assert n == 17 and "Camioneta 1" in out
+    assert n == 19 and "Camioneta 1" in out
 
 
 def test_http_host_publico_permitido_y_host_ajeno_rechazado(servidor):
@@ -154,22 +154,49 @@ def test_existencias_general_camioneta_y_cobertura(empresa):
     assert "| 100.00 |" in fila and "| 5.00 |" in fila and "| 105.00 |" in fila and "| 10.00 |" in fila   # general, camioneta, total, en camino
 
 
+def _col(out, clave, col):
+    lineas = [l for l in out.splitlines() if l.startswith("|")]
+    cab = [c.strip() for c in lineas[0].split("|")[1:-1]]
+    fila = [l for l in lineas[2:] if l.split("|")[1].strip() == clave][0]
+    return fila.split("|")[1:-1][cab.index(col)].strip()
+
+
 def test_sugerido_compra_formula(empresa):
-    out = run(llamar(empresa, "sugerido_compra"))
-    filas = {l.split("|")[1].strip(): l for l in out.splitlines() if l.startswith("| 200")}
-    # globo (200): venta neta 12 pzas en 0-30 d -> dem = 0.5*12/30 = 0.2/dia; necesidad 0.2*50 = 10; posicion = 2 -> sugerido 8
-    assert "2000034" in filas and filas["2000034"].split("|")[10].strip() == "8"
-    # spinner (300): 9 pzas (RM3 4 + RM5 5) -> 0.15/dia; necesidad 7.5; posicion 0 -> 8
-    assert "2002784" in filas and filas["2002784"].split("|")[10].strip() == "8"
+    out = run(llamar(empresa, "sugerido_compra", estacionalidad=False, seguridad=False))
+    # globo (200): venta neta 12 pzas en 0-30 d -> dem = 0.2/dia; necesidad 0.2*50 = 10; posicion = 2 -> sugerido 8
+    assert _col(out, "2000034", "sugerido") == "8"
+    # spinner (300): 9 pzas -> 0.15/dia; necesidad 7.5; posicion 0 -> 8
+    assert _col(out, "2002784", "sugerido") == "8"
     # baraja (100): posicion 100+5+10 cubre la necesidad -> no se sugiere
-    assert "2000112" not in filas
+    assert "2000112" not in out
+
+
+def test_sugerido_estacionalidad_y_seguridad(empresa):
+    base = run(llamar(empresa, "sugerido_compra", estacionalidad=False, seguridad=False))
+    est = run(llamar(empresa, "sugerido_compra", seguridad=False))
+    assert "estacionalidad x1." in est
+    assert float(_col(est, "2000034", "necesidad")) > float(_col(base, "2000034", "necesidad"))
+    ss = run(llamar(empresa, "sugerido_compra", estacionalidad=False))
+    assert float(_col(ss, "2000034", "seguridad")) > 0
+    assert _col(ss, "2000034", "clase") in ("A+", "A")
+    assert int(_col(ss, "2000034", "sugerido")) >= int(_col(base, "2000034", "sugerido"))
 
 
 def test_sugerido_parametros_y_camionetas(empresa):
-    # con cobertura 0 y entrega 0 la necesidad es 0: no se sugiere nada
-    assert "Sin resultados" in run(llamar(empresa, "sugerido_compra", cobertura_dias=0, lead_time_dias=0))
+    assert "Sin resultados" in run(llamar(empresa, "sugerido_compra", cobertura_dias=0, lead_time_dias=0, seguridad=False))
     with pytest.raises(Exception, match=">= 0"):
         run(llamar(empresa, "sugerido_compra", cobertura_dias=-1))
+    with pytest.raises(Exception, match="clase"):
+        run(llamar(empresa, "sugerido_compra", clase="Z"))
+
+
+def test_estacionalidad_y_abc(empresa):
+    est = run(llamar(empresa, "estacionalidad"))
+    assert "1.50" in est and "horizonte_dias" in est
+    res = run(llamar(empresa, "abc"))
+    assert "A+" in res and "pct_venta" in res
+    lista = run(llamar(empresa, "abc", clase="A+"))
+    assert "2000034" in lista
 
 
 def test_sin_movimiento_y_stock_camioneta(empresa):

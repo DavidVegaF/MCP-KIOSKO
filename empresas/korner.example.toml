@@ -26,3 +26,28 @@ conceptos_cambio = [7974]             # DOCTOS_IN: cambios de mercancia / salida
 
 [etl]
 desde = "2024-11-01"                  # las primeras remisiones de ruta son de 2024-11-11
+
+# Perfil mensual de demanda (1.0 = mes normal). Se aplica al sugerido de compra; ajustalo a tu negocio.
+# Ejemplo derivado de un ano de ventas de otra empresa del grupo: no es historia de la ruta.
+[estacionalidad]
+1 = 0.97
+2 = 0.95
+3 = 0.79
+4 = 1.04
+5 = 0.95
+6 = 0.91
+7 = 0.96
+8 = 0.96
+9 = 0.98
+10 = 1.11
+11 = 1.13
+12 = 1.23
+
+# Clase ABC por venta de 90 dias: cortes de venta acumulada (A+, A, B; el resto es C) y z del stock de seguridad.
+[abc]
+cortes = [0.20, 0.80, 0.95]
+[abc.z]
+"A+" = 1.65
+"A" = 1.28
+"B" = 0.84
+"C" = 0.5

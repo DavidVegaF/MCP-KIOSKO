@@ -20,6 +20,8 @@ class Empresa:
     filas_visibles: int = 200
     filas_sql: int = 2000
     reglas: dict = field(default_factory=dict)
+    estacionalidad: dict = field(default_factory=dict)   # {mes: indice}; 1.0 = mes normal
+    abc: dict = field(default_factory=dict)              # cortes acumulados y z por clase
 
     @property
     def token(self) -> str:
@@ -54,4 +56,6 @@ def load_empresa(path: str | Path) -> Empresa:
         filas_visibles=int(lim.get("filas_visibles", 200)),
         filas_sql=int(lim.get("filas_sql", 2000)),
         reglas=raw.get("reglas", {}),
+        estacionalidad=raw.get("estacionalidad", {}),
+        abc=raw.get("abc", {}),
     )

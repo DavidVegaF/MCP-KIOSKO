@@ -34,6 +34,27 @@ def renderizar(plantilla: str, parquet: Path, reglas: dict, hoy: str) -> str:
     return plantilla
 
 
+Z_POR_DEFECTO = {"A+": 1.65, "A": 1.28, "B": 0.84, "C": 0.5}       # mismos factores que el MCP de DTODO
+CORTES_POR_DEFECTO = [0.20, 0.80, 0.95]                              # A+ 0-20 %, A 20-80 %, B 80-95 %, C 95-100 % de la venta acumulada
+
+
+def crear_parametros(con, estacionalidad: dict, abc: dict) -> None:
+    """Tablas `estacionalidad_mes` y `abc_param` (las lee build.sql y las herramientas)."""
+    idx = {int(k): float(v) for k, v in estacionalidad.items()}
+    for m, v in idx.items():
+        if not 1 <= m <= 12 or not 0.1 <= v <= 5:
+            raise ValueError(f"[estacionalidad] mes {m} / indice {v} fuera de rango (mes 1-12, indice 0.1-5)")
+    con.execute("CREATE TABLE estacionalidad_mes (mes INTEGER, indice DOUBLE)")
+    con.executemany("INSERT INTO estacionalidad_mes VALUES (?, ?)", [(m, idx.get(m, 1.0)) for m in range(1, 13)])
+    cortes = [float(c) for c in abc.get("cortes", CORTES_POR_DEFECTO)]
+    if len(cortes) != 3 or not (0 < cortes[0] < cortes[1] < cortes[2] < 1):
+        raise ValueError("[abc] cortes debe tener 3 valores crecientes entre 0 y 1")
+    z = {**Z_POR_DEFECTO, **{k: float(v) for k, v in abc.get("z", {}).items()}}
+    con.execute("CREATE TABLE abc_param (clase VARCHAR, orden INTEGER, corte DOUBLE, z DOUBLE)")
+    con.executemany("INSERT INTO abc_param VALUES (?, ?, ?, ?)",
+                    [("A+", 1, cortes[0], z["A+"]), ("A", 2, cortes[1], z["A"]), ("B", 3, cortes[2], z["B"]), ("C", 4, 1.0, z["C"])])
+
+
 def construir(config: Path, parquet: Path, sql_dir: Path) -> Path:
     emp = load_empresa(config)
     destino = emp.duckdb_path
@@ -51,6 +72,7 @@ def construir(config: Path, parquet: Path, sql_dir: Path) -> Path:
         ).fetchone()[0]
         if hoy is None:
             raise RuntimeError("remision_enc.parquet no tiene ventas: no se reemplaza la base vigente")
+        crear_parametros(con, emp.estacionalidad, emp.abc)
         for archivo in ("build.sql", "indicadores.sql"):
             ruta = sql_dir / archivo
             if ruta.exists():

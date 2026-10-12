@@ -8,6 +8,7 @@ from mcp.server.fastmcp import FastMCP
 from . import db
 from .config import Empresa
 from .fmt import tabla
+from .estacional import factor_estacional
 from .guards import validar_sql
 
 
@@ -118,8 +119,13 @@ Fecha de corte (ultima venta cargada): **{hoy}**. Los datos se reconstruyen cada
 - **Demanda diaria de ruta** = (0.5 x piezas 0-30 d + 0.3 x piezas 31-60 d + 0.2 x piezas 61-90 d) / 30, donde las piezas son la
   **salida fisica de las camionetas: remisiones + cambios de mercancia (salida a tienda) - devoluciones**.
 - **En camino** = unidades por recibir de ordenes de compra (tipo O).
-- **Sugerido** = max(0, venta diaria x (entrega + cobertura) - (disponible general [+ camionetas] + en camino)). Por defecto 30 dias de cobertura
-  y 20 de entrega (ajustables). **No considera estacionalidad, tendencia explicita, ni clase ABC; los minimos de compra solo se muestran.**
+- **Clase ABC** (`abc_articulo`, columna `clase_abc`): por venta sin IVA de 90 dias; A+ primer 20 % de la venta acumulada, A hasta 80 %, B hasta 95 %, C el resto.
+- **Estacionalidad**: indice mensual (1.0 = normal) en `estacionalidad_mes`, definido en la configuracion (no se aprende de la ruta). Factor =
+  indice de los proximos (entrega + cobertura) dias / indice de la ventana de 90 dias que midio la demanda, acotado a 0.5-2.0 (herramienta `estacionalidad`).
+- **Stock de seguridad** = z x desviacion semanal x raiz(entrega/7); z por clase (A+ 1.65, A 1.28, B 0.84, C 0.5).
+- **Sugerido** = max(0, venta diaria x factor estacional x (entrega + cobertura) + seguridad - (disponible general [+ camionetas] + en camino)).
+  Por defecto 30 dias de cobertura y 20 de entrega (ajustables); estacionalidad y seguridad se pueden apagar. Articulos con menos de 30 dias de
+  historia salen como nuevos. **No considera tendencia explicita; los minimos de compra solo se muestran.**
 - Tablas: `art_inventario` (una fila por articulo), `stock` (articulo x almacen), `demanda_ruta`, `compra_en_transito`, `prov_principal`.
 
 Toda metrica de venta es `SUM(importe)` o `SUM(unidades)` sobre `v_venta`; las devoluciones `SUM(unidades)` sobre `v_devolucion`.
@@ -465,37 +471,88 @@ def registrar(mcp: FastMCP, emp: Empresa) -> None:
         c, f, t = db.consultar(emp, sql, p)
         return _salida(c, f, t, "Piezas. dias_cobertura = existencia total / venta diaria (existencia negativa cuenta 0); vacio si no hay venta en 90 dias.")
 
+    def _indices() -> dict[int, float]:
+        _, filas, _ = db.consultar(emp, "SELECT mes, indice FROM estacionalidad_mes")
+        return {int(m): float(i) for m, i in filas}
+
     @mcp.tool()
     def sugerido_compra(
         linea: str | None = None, articulo: str | None = None, cobertura_dias: int = 30, lead_time_dias: int = 20,
-        incluir_camionetas: bool = True, top: int = 50,
+        incluir_camionetas: bool = True, estacionalidad: bool = True, seguridad: bool = True, clase: str | None = None,
+        top: int = 50,
     ) -> str:
         """Sugerido de compra para el almacen general.
 
-        Referencia: salida diaria de las camionetas = remisiones + cambios de mercancia - devoluciones, ponderada 50/30/20 sobre 90 dias. Necesidad = venta diaria x
-        (tiempo de entrega + dias de cobertura). Posicion = existencia disponible (general, y camionetas si incluir_camionetas)
-        + ordenes de compra por recibir. Sugerido = necesidad - posicion, redondeado hacia arriba; solo se listan los positivos.
-        No usa estacionalidad ni tendencia (ver diccionario)."""
+        Referencia: salida diaria de las camionetas = remisiones + cambios de mercancia - devoluciones, ponderada 50/30/20 sobre 90 dias.
+        Necesidad = venta diaria x factor de estacionalidad x (tiempo de entrega + dias de cobertura). Stock de seguridad (si `seguridad`)
+        = z de la clase ABC x variabilidad semanal x raiz(entrega/7). Posicion = existencia disponible (general, y camionetas si
+        incluir_camionetas) + ordenes de compra por recibir. Sugerido = necesidad + seguridad - posicion, hacia arriba; solo positivos.
+        `clase`: A+, A, B o C. Articulos con menos de 30 dias de historia salen marcados como nuevos (la demanda no es confiable)."""
         if cobertura_dias < 0 or lead_time_dias < 0:
             raise ValueError("cobertura_dias y lead_time_dias deben ser >= 0")
-        conds, p = ["dem_diaria > 0"], [bool(incluir_camionetas), lead_time_dias + cobertura_dias]
+        if clase is not None and clase.upper() not in ("A+", "A", "B", "C"):
+            raise ValueError("clase debe ser A+, A, B o C")
+        horizonte = lead_time_dias + cobertura_dias
+        factor, idx_h, idx_b = (1.0, 1.0, 1.0)
+        if estacionalidad and horizonte > 0:
+            factor, idx_h, idx_b = factor_estacional(_indices(), db.hoy(emp), horizonte)
+        conds, p = ["dem_diaria > 0"], [bool(incluir_camionetas), horizonte * factor, bool(seguridad), float(lead_time_dias)]
         _like("linea", linea, conds, p)
         _like("clave || ' ' || nombre", articulo, conds, p)
+        if clase:
+            conds.append("clase_abc = ?")
+            p.append(clase.upper())
         sql = f"""
           WITH b AS (
-            SELECT *, GREATEST(exist_general - comprom_general, 0) + CASE WHEN ? THEN GREATEST(exist_camionetas, 0) ELSE 0 END
+            SELECT a.*, GREATEST(exist_general - comprom_general, 0) + CASE WHEN ? THEN GREATEST(exist_camionetas, 0) ELSE 0 END
                       + en_transito AS posicion,
-                   dem_diaria * ? AS necesidad
-            FROM art_inventario {_where(conds)})
-          SELECT clave, nombre AS articulo, linea, ROUND(dem_diaria*30,1) AS venta_30d, ROUND(exist_general,1) AS general,
+                   dem_diaria * ? AS necesidad,
+                   CASE WHEN ? THEN z * desv_semanal * sqrt(? / 7.0) ELSE 0 END AS ss
+            FROM art_inventario a {_where(conds)})
+          SELECT clave, nombre AS articulo, linea, clase_abc AS clase, ROUND(dem_diaria*30,1) AS venta_30d, ROUND(exist_general,1) AS general,
                  ROUND(exist_camionetas,1) AS camionetas, ROUND(en_transito,1) AS en_camino,
-                 ROUND(posicion,1) AS posicion, ROUND(necesidad,1) AS necesidad,
-                 CAST(CEIL(necesidad - posicion) AS BIGINT) AS sugerido,
-                 proveedor, ROUND(minimo_ucom,1) AS minimo_compra
-          FROM b WHERE necesidad - posicion > 0 ORDER BY dem_diaria DESC LIMIT {int(max(1, min(top, vis)))}"""
+                 ROUND(posicion,1) AS posicion, ROUND(necesidad,1) AS necesidad, ROUND(ss,1) AS seguridad,
+                 CAST(CEIL(necesidad + ss - posicion) AS BIGINT) AS sugerido,
+                 proveedor, ROUND(minimo_ucom,1) AS minimo_compra,
+                 CASE WHEN primera_mov > (SELECT hoy FROM param) - 30 THEN 'nuevo (<30 d)' END AS aviso
+          FROM b WHERE necesidad + ss - posicion > 0 ORDER BY venta_90d DESC LIMIT {int(max(1, min(top, vis)))}"""
         c, f, t = db.consultar(emp, sql, p)
-        return _salida(c, f, t, f"Cobertura {cobertura_dias} d + entrega {lead_time_dias} d; "
+        est = f"estacionalidad x{factor:.2f} (indice horizonte {idx_h:.2f} / base {idx_b:.2f})" if estacionalidad else "sin estacionalidad"
+        return _salida(c, f, t, f"Cobertura {cobertura_dias} d + entrega {lead_time_dias} d; {est}; "
+                                f"stock de seguridad {'incluido' if seguridad else 'no incluido'}; "
                                 f"camionetas {'incluidas' if incluir_camionetas else 'no incluidas'} en la posicion. Piezas.")
+
+    @mcp.tool()
+    def estacionalidad() -> str:
+        """Indice de estacionalidad por mes (1.0 = mes normal) y el factor que se aplica hoy al sugerido de compra para distintos horizontes."""
+        c, f, t = db.consultar(emp, "SELECT mes, indice FROM estacionalidad_mes ORDER BY mes")
+        idx = {int(m): float(i) for m, i in f}
+        hoy = db.hoy(emp)
+        filas = [(h, *[round(x, 2) for x in factor_estacional(idx, hoy, h)]) for h in (30, 50, 60, 90)]
+        return (_salida(c, f, t, "Perfil mensual editable en la configuracion; no se aprende de la ruta (poca historia formal).")
+                + "\n\n" + _salida(["horizonte_dias", "factor", "indice_horizonte", "indice_base"], filas, False,
+                                    f"Factor = indice de los proximos dias / indice de la ventana que midio la demanda (corte {hoy}); acotado a 0.5-2.0."))
+
+    @mcp.tool()
+    def abc(clase: str | None = None, linea: str | None = None, top: int = 50) -> str:
+        """Clasificacion ABC por venta (importe sin IVA) de los ultimos 90 dias en ruta: A+ (primer 20 % de la venta), A (hasta 80 %), B (hasta 95 %), C. Sin `clase`
+        da el resumen por clase; con `clase` lista los articulos."""
+        conds, p = ["clase_abc IS NOT NULL", "venta_90d > 0"], []
+        _like("linea", linea, conds, p)
+        if clase:
+            if clase.upper() not in ("A+", "A", "B", "C"):
+                raise ValueError("clase debe ser A+, A, B o C")
+            conds.append("clase_abc = ?")
+            p.append(clase.upper())
+            sql = f"""SELECT clave, nombre AS articulo, linea, clase_abc AS clase, ROUND(venta_90d,2) AS venta_90d,
+                             ROUND(dem_diaria*30,1) AS pzas_30d, ROUND(exist_general + exist_camionetas,1) AS existencia
+                      FROM art_inventario {_where(conds)} ORDER BY venta_90d DESC LIMIT {int(max(1, min(top, vis)))}"""
+        else:
+            sql = f"""SELECT clase_abc AS clase, COUNT(*) AS articulos, ROUND(SUM(venta_90d),2) AS venta_90d,
+                             ROUND(100*SUM(venta_90d)/SUM(SUM(venta_90d)) OVER (), 1) AS pct_venta
+                      FROM art_inventario {_where(conds)} GROUP BY 1 ORDER BY CASE clase_abc WHEN 'A+' THEN 1 WHEN 'A' THEN 2 WHEN 'B' THEN 3 ELSE 4 END"""
+        c, f, t = db.consultar(emp, sql, p)
+        return _salida(c, f, t, "Venta de remisiones de los ultimos 90 dias (sin IVA). La clase fija el z del stock de seguridad.")
 
     @mcp.tool()
     def sin_movimiento(linea: str | None = None, top: int = 50) -> str:
