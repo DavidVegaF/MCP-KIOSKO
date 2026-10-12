@@ -131,6 +131,27 @@ SELECT d.*, COALESCE(vc.vendedor, 'SIN VENDEDOR (ese dia)') AS vendedor, vc.vend
 FROM fact_cambio_det d
 LEFT JOIN vendedor_camioneta_dia vc ON vc.almacen_id = d.almacen_id AND vc.fecha = d.fecha;
 
+-- Canje = un cambio de mercancia (salida a tienda) emparejado con la devolucion que lo origino: la descripcion del
+-- cambio dice "Canje folio entrada ET0000283" y ese es el folio de la devolucion (entrada de tienda).
+CREATE TABLE canje AS
+WITH c AS (
+  SELECT docto_in_id, folio AS folio_cambio, fecha, almacen_id, camioneta,
+         NULLIF(regexp_extract(COALESCE(descripcion, ''), '(?i)folio\s+entrada\s+(\S+)', 1), '') AS folio_entrada,
+         COUNT(*) AS renglones_entregados, SUM(unidades) AS pzas_entregadas, SUM(costo_total) AS costo_entregado
+  FROM fact_cambio_det GROUP BY docto_in_id, folio, fecha, almacen_id, camioneta, descripcion
+), d AS (
+  SELECT folio AS folio_entrada, COUNT(*) AS renglones_devueltos, SUM(unidades) AS pzas_devueltas, SUM(costo_total) AS costo_devuelto
+  FROM fact_devolucion_det GROUP BY folio
+)
+SELECT c.*, d.renglones_devueltos, COALESCE(d.pzas_devueltas, 0) AS pzas_devueltas, COALESCE(d.costo_devuelto, 0) AS costo_devuelto,
+       d.folio_entrada IS NOT NULL AS con_devolucion,
+       c.costo_entregado - COALESCE(d.costo_devuelto, 0) AS costo_neto
+FROM c LEFT JOIN d ON d.folio_entrada = c.folio_entrada;
+
+CREATE VIEW v_canje AS
+SELECT x.*, COALESCE(vc.vendedor, 'SIN VENDEDOR (ese dia)') AS vendedor
+FROM canje x LEFT JOIN vendedor_camioneta_dia vc ON vc.almacen_id = x.almacen_id AND vc.fecha = x.fecha;
+
 CREATE VIEW v_devolucion AS
 SELECT d.*, COALESCE(vc.vendedor, 'SIN VENDEDOR (ese dia)') AS vendedor, vc.vendedor_id
 FROM fact_devolucion_det d

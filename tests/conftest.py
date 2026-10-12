@@ -80,7 +80,7 @@ almacen_general = 1
         "docto_in_id": [10, 11, 12, 13], "folio": ["DI1", "DI2", "DI3", "DI4"],
         "fecha": [D(2026, 10, 2), D(2026, 10, 3), D(2026, 10, 3), D(2026, 10, 2)], "almacen_id": [11, 12, 11, 11],
         "concepto_in_id": [7972, 7972, 123, 7974], "cancelado": ["N", "N", "N", "N"],
-        "descripcion": ["dev kiosko", "dev", "otro", "cambio"],
+        "descripcion": ["dev kiosko", "dev", "otro", "Canje folio entrada DI1"],
     })
     _w(pqd, "doctos_in_det", {
         "docto_in_id": [10, 11, 12, 13], "articulo_id": [100, 200, 100, 100], "unidades": [1.0, 2.0, 50.0, 3.0],

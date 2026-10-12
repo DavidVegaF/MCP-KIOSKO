@@ -6,7 +6,7 @@ en vez de stdio/SSH, y con **una instancia por empresa** (un conector cada una).
 
 | Empresa | Perfil | Estado |
 |---|---|---|
-| **GRUPO COMERCIAL KORNER** (ruta: camionetas → kioscos) | `ruta` | Servidor, modelo y 16 herramientas listos y probados con datos sintéticos y con el catálogo/remisiones reales del Excel. **Falta validar contra Firebird** (ver "Pendiente"). |
+| **GRUPO COMERCIAL KORNER** (ruta: camionetas → kioscos) | `ruta` | Servidor, modelo y 17 herramientas listos y probados con datos sintéticos y con el catálogo/remisiones reales del Excel. **Falta validar contra Firebird** (ver "Pendiente"). |
 | **DTODO NUEVA UNIFICADA** | `dtodo` | Pendiente: se adapta del código original (`mcp_server.py`, `build.sql`, …). |
 
 ## Arquitectura
@@ -24,11 +24,11 @@ Firebird (BI_READER, solo lectura)           Servidor Windows, 02:00
 - El servidor valida el header `Host` (`public_host`) contra DNS rebinding.
 - Datos de ayer hacia atrás (fecha de corte = última remisión cargada). Nunca escribe en Microsip.
 
-## Herramientas del perfil `ruta` (16)
+## Herramientas del perfil `ruta` (17)
 
 `diccionario` · `ventas` · `ranking_camionetas` · `ranking_vendedores` · `productos_ruta` · `devoluciones_ruta` ·
 `kiosko_geolocalizar` · `visitas` · `articulo` · `calidad_datos` · `sql` ·
-**inventario y compras:** `existencias` · `sugerido_compra` · `sin_movimiento` · `stock_camioneta` · `cambios_ruta`
+**inventario y compras:** `existencias` · `sugerido_compra` · `sin_movimiento` · `stock_camioneta` · `cambios_ruta` · `canjes`
 
 Reglas de negocio y supuestos: **`docs/DISENO-RUTA.md`**.
 
@@ -37,7 +37,7 @@ Reglas de negocio y supuestos: **`docs/DISENO-RUTA.md`**.
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,etl]"
-pytest                      # 52 pruebas: reglas, guardas SQL, herramientas, ETL y HTTP con cliente MCP real
+pytest                      # 55 pruebas: reglas, guardas SQL, herramientas, ETL y HTTP con cliente MCP real
 ```
 
 ## Puesta en marcha (réplica del flujo de DTODO; ejemplo `korner`)

@@ -97,6 +97,7 @@ Fecha de corte (ultima venta cargada): **{hoy}**. Los datos se reconstruyen cada
 |---|---|
 | `v_venta` | Un renglon de remision: fecha, folio, camioneta, vendedor, kiosko_id, kiosko, zona, lat, lon, clave, articulo, linea, unidades, importe |
 | `v_visita` | Una remision (visita): fecha, hora, folio, camioneta, vendedor, kiosko_id, kiosko, zona, lat, lon, importe, piezas, renglones |
+| `v_canje` | Un canje (cambio emparejado con su devolucion): folios, camioneta, vendedor, piezas y costo devuelto/entregado, costo_neto |
 | `v_cambio` | Un renglon entregado en cambio (salida a tienda): fecha, folio, camioneta, vendedor (probable), clave, articulo, linea, unidades, costo_total |
 | `v_devolucion` | Un renglon devuelto: fecha, folio, camioneta, vendedor (probable), clave, articulo, linea, unidades, costo_total |
 | `dim_kiosko` | Catalogo: kiosko_id, id_viejo, nombre, tipo, zona, zona_k, lat, lon, domicilio, colonia, cp, poblacion, estado |
@@ -109,6 +110,8 @@ Fecha de corte (ultima venta cargada): **{hoy}**. Los datos se reconstruyen cada
 - Son **cambios fisicos a los kioscos**: DOCTOS_IN con concepto {cambio} (salida a tienda). Sacan producto de la camioneta **sin remision**, asi que no
   aparecen en `ventas` (no hay ingreso) pero **si cuentan como consumo de inventario** en la demanda del sugerido. Se ven con `cambios_ruta`
   (`v_cambio`) y se comparan con las devoluciones.
+- Cada cambio dice `Canje folio entrada ET...`: ese es el folio de la **devolucion** que lo origino. Se emparejan en `canje`/`v_canje`
+  (herramienta `canjes`): piezas y costo devuelto contra entregado. **Ninguno de los dos documentos trae el kiosko.**
 
 ## Inventario y sugeridos
 - **Existencia** = entradas - salidas acumuladas de SALDOS_IN por articulo y almacen. Tipos: `general` ({general}), `camioneta`, `otro`.
@@ -401,6 +404,43 @@ def registrar(mcp: FastMCP, emp: Empresa) -> None:
         c_, f, t = db.consultar(emp, sql, p + p)
         return _salida(c_, f, t, f"Periodo {d} a {h}. diferencia > 0: salio mas de lo que regreso. Costo = costo de la mercancia entregada.")
 
+    @mcp.tool()
+    def canjes(
+        desde: str | None = None, hasta: str | None = None, agrupar_por: str = "camioneta",
+        camioneta: str | None = None, vendedor: str | None = None, top: int = 30,
+    ) -> str:
+        """Canjes de mercancia: cada cambio (salida a tienda) emparejado con la devolucion que lo origino (por el folio de entrada).
+
+        agrupar_por: camioneta, vendedor, mes, dia o canje (uno por renglon, con sus dos folios). Mide piezas y costo devuelto contra
+        entregado; costo_neto = entregado - devuelto (lo que cuesta el programa de cambios). sin_devolucion = cambios cuyo folio
+        de entrada no se encontro. El vendedor es el que mas vendio ese dia en esa camioneta."""
+        grupos = {"camioneta": "camioneta", "vendedor": "vendedor", "mes": "strftime(fecha, '%Y-%m')",
+                  "dia": "CAST(fecha AS VARCHAR)", "canje": None}
+        if agrupar_por not in grupos:
+            raise ValueError(f"agrupar_por debe ser uno de: {', '.join(grupos)}")
+        d, h = _rango(emp, desde, hasta)
+        conds, p = ["fecha BETWEEN ? AND ?"], [d, h]
+        _like("camioneta", camioneta, conds, p)
+        _like("vendedor", vendedor, conds, p)
+        lim = int(max(1, min(top, vis)))
+        if agrupar_por == "canje":
+            sql = f"""
+              SELECT fecha, folio_cambio, folio_entrada, camioneta, vendedor, ROUND(pzas_devueltas,2) AS pzas_devueltas,
+                     ROUND(pzas_entregadas,2) AS pzas_entregadas, ROUND(costo_devuelto,2) AS costo_devuelto,
+                     ROUND(costo_entregado,2) AS costo_entregado, ROUND(costo_neto,2) AS costo_neto
+              FROM v_canje {_where(conds)} ORDER BY fecha DESC, folio_cambio DESC LIMIT {lim}"""
+        else:
+            g = grupos[agrupar_por]
+            orden = "grupo" if agrupar_por in ("mes", "dia") else "costo_neto DESC"
+            sql = f"""
+              SELECT {g} AS grupo, COUNT(*) AS canjes, ROUND(SUM(pzas_devueltas),2) AS pzas_devueltas,
+                     ROUND(SUM(pzas_entregadas),2) AS pzas_entregadas, ROUND(SUM(costo_devuelto),2) AS costo_devuelto,
+                     ROUND(SUM(costo_entregado),2) AS costo_entregado, ROUND(SUM(costo_neto),2) AS costo_neto,
+                     COUNT(*) FILTER (WHERE NOT con_devolucion) AS sin_devolucion
+              FROM v_canje {_where(conds)} GROUP BY 1 ORDER BY {orden} LIMIT {lim}"""
+        c_, f, t = db.consultar(emp, sql, p)
+        return _salida(c_, f, t, f"Periodo {d} a {h}. Costos al costo de inventario. costo_neto > 0: se entrego mas valor del que regreso.")
+
     # ---------------------------------------------------------------- inventario y compras
     @mcp.tool()
     def existencias(
@@ -419,10 +459,11 @@ def registrar(mcp: FastMCP, emp: Empresa) -> None:
           SELECT clave, nombre AS articulo, linea, ROUND(exist_general,2) AS exist_general,
                  ROUND(exist_camionetas,2) AS exist_camionetas, ROUND(exist_general + exist_camionetas,2) AS total,
                  ROUND(en_transito,2) AS en_camino, ROUND(dem_diaria*30,1) AS venta_30d_estimada,
-                 CASE WHEN dem_diaria > 0 THEN ROUND((exist_general + exist_camionetas)/dem_diaria) END AS dias_cobertura
+                 CASE WHEN dem_diaria > 0 THEN ROUND(GREATEST(exist_general + exist_camionetas, 0)/dem_diaria) END AS dias_cobertura,
+                 CASE WHEN exist_general < 0 OR exist_camionetas < 0 THEN 'revisar existencia negativa' END AS aviso
           FROM art_inventario {_where(conds)} ORDER BY dem_diaria DESC, total DESC LIMIT {int(max(1, min(top, vis)))}"""
         c, f, t = db.consultar(emp, sql, p)
-        return _salida(c, f, t, "Piezas. dias_cobertura = existencia total / venta diaria; vacio si no hay venta en 90 dias.")
+        return _salida(c, f, t, "Piezas. dias_cobertura = existencia total / venta diaria (existencia negativa cuenta 0); vacio si no hay venta en 90 dias.")
 
     @mcp.tool()
     def sugerido_compra(

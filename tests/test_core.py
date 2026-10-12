@@ -85,3 +85,10 @@ def test_calidad_datos_reporta_inventario(empresa):
     res = asyncio.run(construir_mcp(empresa).call_tool("calidad_datos", {}))
     out = "\n".join(c.text for c in (res[0] if isinstance(res, tuple) else res))
     assert "existencias en almacen general" in out and "existencias en camionetas" in out
+
+
+def test_canje_empareja_cambio_con_su_devolucion_por_folio(empresa):
+    fila = q(empresa, "SELECT folio_cambio, folio_entrada, con_devolucion, pzas_entregadas, pzas_devueltas, costo_entregado, "
+                      "costo_devuelto, costo_neto, vendedor FROM v_canje")[0]
+    # DI4 (cambio) -> "Canje folio entrada DI1": entrego 3 pzas ($30) y regreso 1 ($10): costo neto 20
+    assert fila == ("DI4", "DI1", True, 3.0, 1.0, 30.0, 10.0, 20.0, "VENDEDOR A")

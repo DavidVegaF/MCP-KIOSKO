@@ -33,7 +33,7 @@ def test_herramientas_registradas(empresa):
     nombres = {t.name for t in run(construir_mcp(empresa).list_tools())}
     assert nombres == {"diccionario", "ventas", "ranking_camionetas", "ranking_vendedores", "productos_ruta",
                        "devoluciones_ruta", "kiosko_geolocalizar", "visitas", "articulo", "calidad_datos", "sql",
-                       "existencias", "sugerido_compra", "sin_movimiento", "stock_camioneta", "cambios_ruta"}
+                       "existencias", "sugerido_compra", "sin_movimiento", "stock_camioneta", "cambios_ruta", "canjes"}
 
 
 def test_ventas_por_camioneta(empresa):
@@ -136,7 +136,7 @@ def test_http_cliente_mcp_real(servidor):
                 res = await s.call_tool("ranking_camionetas", {"desde": "2026-10-01", "hasta": "2026-10-03"})
                 return len(tools.tools), texto(res)
     n, out = run(go())
-    assert n == 16 and "Camioneta 1" in out
+    assert n == 17 and "Camioneta 1" in out
 
 
 def test_http_host_publico_permitido_y_host_ajeno_rechazado(servidor):
@@ -188,3 +188,21 @@ def test_cambios_ruta_entregado_contra_devuelto(empresa):
     assert "GLOBO" in out                                                                              # solo devuelto (FULL JOIN)
     por_cam = run(llamar(empresa, "cambios_ruta", desde="2026-10-01", hasta="2026-10-03", agrupar_por="camioneta"))
     assert "Camioneta 1" in por_cam
+
+
+def test_canjes_por_camioneta_y_por_canje(empresa):
+    cam = run(llamar(empresa, "canjes", desde="2026-10-01", hasta="2026-10-03", agrupar_por="camioneta"))
+    fila = [l for l in cam.splitlines() if "Camioneta 1" in l][0]
+    assert "| 1 |" in fila and "| 20.00 |" in fila and "| 0 |" in fila          # 1 canje, costo neto 20, sin_devolucion 0
+    uno = run(llamar(empresa, "canjes", desde="2026-10-01", hasta="2026-10-03", agrupar_por="canje"))
+    assert "DI4" in uno and "DI1" in uno
+    with pytest.raises(Exception, match="agrupar_por"):
+        run(llamar(empresa, "canjes", agrupar_por="kiosko"))
+
+
+def test_existencias_negativa_no_da_cobertura_negativa(empresa):
+    out = run(llamar(empresa, "existencias", solo_con_existencia=False))
+    assert "aviso" in out
+    for l in out.splitlines():
+        if l.startswith("| 20"):
+            assert "| -" not in l.split("|")[-3]       # dias_cobertura nunca negativa
