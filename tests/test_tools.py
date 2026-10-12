@@ -175,7 +175,7 @@ def test_sugerido_parametros_y_camionetas(empresa):
 def test_sin_movimiento_y_stock_camioneta(empresa):
     sm = run(llamar(empresa, "sin_movimiento"))
     fila = [l for l in sm.splitlines() if l.startswith("| 2000400")][0]     # tiene 7 pzas en el general y ninguna venta
-    assert "| 7.0 |" in fila and "| 70.00 |" in fila
+    assert "| 7.00 |" in fila and "| 70.00 |" in fila
     assert "2000112" not in sm                                              # la baraja si se vende: no aparece
     sc = run(llamar(empresa, "stock_camioneta", camioneta="camioneta 1"))
     assert "2000112" in sc and "| 5.00 |" in sc
