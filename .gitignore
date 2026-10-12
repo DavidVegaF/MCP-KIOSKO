@@ -1,0 +1,20 @@
+# Datos de negocio y credenciales: NUNCA en git (el repo es publico)
+data/
+*.duckdb
+*.duckdb.wal
+*.parquet
+*.xlsx
+*.csv
+.env
+empresas/*.toml
+!empresas/*.example.toml
+last_run.log
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+*.ini
+!*.example.ini
+discover_report*.txt

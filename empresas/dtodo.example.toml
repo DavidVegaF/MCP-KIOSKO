@@ -1,0 +1,12 @@
+# Segundo conector (DTODO). Llega cuando se adapte el codigo original (perfil "dtodo").
+[empresa]
+id = "dtodo"
+nombre = "DTODO NUEVA UNIFICADA"
+perfil = "dtodo"
+[duckdb]
+path = "data/dtodo/analitica.duckdb"
+[server]
+host = "127.0.0.1"
+port = 8100
+public_host = "mac-mini-de-dtodo-mac.<tu-tailnet>.ts.net"
+token_env = "MCP_TOKEN_DTODO"

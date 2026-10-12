@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Copiar a ~/Library/LaunchAgents/com.dtodo.mcp.korner.plist (cambiar EMPRESA y la ruta), luego:
+     launchctl load ~/Library/LaunchAgents/com.dtodo.mcp.korner.plist -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.dtodo.mcp.EMPRESA</string>
+  <key>ProgramArguments</key><array>
+    <string>/Users/dtodo-mac/microsip-mcp/scripts/run_mcp.sh</string><string>EMPRESA</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>/Users/dtodo-mac/microsip-mcp/data/mcp-EMPRESA.log</string>
+  <key>StandardErrorPath</key><string>/Users/dtodo-mac/microsip-mcp/data/mcp-EMPRESA.log</string>
+</dict></plist>

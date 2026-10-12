@@ -1,0 +1,2 @@
+-- params:
+SELECT ALMACEN_ID AS almacen_id, TRIM(NOMBRE) AS nombre FROM ALMACENES

@@ -1,0 +1,2 @@
+-- params:
+SELECT VENDEDOR_ID AS vendedor_id, TRIM(NOMBRE) AS nombre FROM VENDEDORES

@@ -1,0 +1,5 @@
+-- params: desde
+SELECT d.DOCTO_IN_ID AS docto_in_id, d.ARTICULO_ID AS articulo_id, d.UNIDADES AS unidades, d.COSTO_TOTAL AS costo_total
+FROM DOCTOS_IN_DET d
+JOIN DOCTOS_IN e ON e.DOCTO_IN_ID = d.DOCTO_IN_ID
+WHERE e.CONCEPTO_IN_ID IN ({CONCEPTOS_DEVOLUCION}) AND e.FECHA >= ?
