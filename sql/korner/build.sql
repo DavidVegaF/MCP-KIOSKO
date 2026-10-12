@@ -62,7 +62,8 @@ LEFT JOIN dim_almacen al ON al.almacen_id = e.almacen_id
 LEFT JOIN dim_vendedor v ON v.vendedor_id = e.vendedor_id
 LEFT JOIN dim_articulo a ON a.articulo_id = d.articulo_id
 LEFT JOIN kiosko_alias ka ON ka.alias = split_part(TRIM(e.orden_compra), '-', 1)
-WHERE COALESCE(e.estatus, '') NOT IN ({{ESTATUS_EXCLUIDOS}});
+WHERE COALESCE(e.estatus, '') NOT IN ({{ESTATUS_EXCLUIDOS}})
+  AND COALESCE(e.almacen_id, -1) NOT IN ({{ALMACENES_EXCLUIDOS}});   -- el canal son solo las camionetas
 
 -- Una fila por remision = una visita a un kiosko.
 CREATE TABLE fact_visita AS

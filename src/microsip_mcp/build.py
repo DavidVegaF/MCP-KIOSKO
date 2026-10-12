@@ -12,8 +12,8 @@ from .config import load_empresa
 
 
 def _lista_sql(valores, texto: bool) -> str:
-    if not valores:
-        return "NULL"
+    if not valores:                       # NOT IN (NULL) descartaria TODAS las filas: usar un valor imposible
+        return "'__NINGUNO__'" if texto else "-1"
     return ", ".join("'" + str(v).replace("'", "''") + "'" if texto else str(int(v)) for v in valores)
 
 
@@ -23,6 +23,7 @@ def renderizar(plantilla: str, parquet: Path, reglas: dict, hoy: str) -> str:
         "{{HOY}}": hoy,
         "{{ESTATUS_EXCLUIDOS}}": _lista_sql(reglas.get("estatus_excluidos", ["C"]), True),
         "{{CONCEPTOS_DEVOLUCION}}": _lista_sql(reglas.get("conceptos_devolucion", [7972]), False),
+        "{{ALMACENES_EXCLUIDOS}}": _lista_sql(reglas.get("almacenes_excluidos", []), False),
     }
     for k, v in sub.items():
         plantilla = plantilla.replace(k, v)

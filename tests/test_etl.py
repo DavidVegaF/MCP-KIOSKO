@@ -64,3 +64,10 @@ def test_credenciales_ini_y_env(tmp_path, monkeypatch):
     ini.write_text("﻿[firebird]\nhost = 192.168.1.2\ndatabase = KORNER\nuser = BI_READER\npassword = x\n", encoding="utf-8")
     cfg = fb.cargar_credenciales(ini)                    # BOM utf-8-sig tolerado
     assert cfg["host"] == "192.168.1.2" and cfg["database"] == "KORNER" and cfg["charset"] == "WIN1252"
+
+
+def test_listas_vacias_no_descartan_todo():
+    from microsip_mcp.build import renderizar
+    sql = renderizar("{{ESTATUS_EXCLUIDOS}}|{{ALMACENES_EXCLUIDOS}}|{{CONCEPTOS_DEVOLUCION}}", Path("/x"),
+                     {"estatus_excluidos": [], "almacenes_excluidos": [], "conceptos_devolucion": []}, "2026-01-01")
+    assert sql == "'__NINGUNO__'|-1|-1"

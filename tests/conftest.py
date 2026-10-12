@@ -38,6 +38,7 @@ token_env = "MCP_TOKEN_KORNER"
 [reglas]
 estatus_excluidos = ["C"]
 conceptos_devolucion = [7972]
+almacenes_excluidos = [1]
 """)
     # catalogo de kioscos: 14109 nuevo / viejo 1409; 12067; viejo 54059 repetido (ambiguo); cafeteria 0,0
     _w(pqd, "dim_kiosko", {
@@ -60,17 +61,17 @@ conceptos_devolucion = [7972]
     # remisiones: 1) id nuevo 14109, cam 11 VENDEDOR A; 2) id viejo 1409 (= mismo kiosko), cam 11 VENDEDOR A;
     # 3) 12067 cam 12 JAZ; 4) viejo ambiguo 54059 -> sin kiosko; 5) id desconocido 99999; 6) CANCELADA (excluida)
     _w(pqd, "remision_enc", {
-        "docto_ve_id": [1, 2, 3, 4, 5, 6], "folio": ["RM1", "RM2", "RM3", "RM4", "RM5", "RM6"],
-        "fecha": [D(2026, 10, 1), D(2026, 10, 2), D(2026, 10, 2), D(2026, 10, 3), D(2026, 10, 3), D(2026, 10, 3)],
-        "hora": [dt.time(9, 0)] * 6, "estatus": ["N", "N", "N", "N", "N", "C"],
-        "almacen_id": [11, 11, 12, 11, 12, 11], "vendedor_id": [1, 1, 2, 1, 2, 1],
-        "orden_compra": ["14109-1-3-2236", "1409-2-3-100", "12067-2-3-7464", "54059-1-3-5", "99999-1-3-9", "14109-1-3-1"],
+        "docto_ve_id": [1, 2, 3, 4, 5, 6, 7], "folio": ["RM1", "RM2", "RM3", "RM4", "RM5", "RM6", "RM7"],
+        "fecha": [D(2026, 10, 1), D(2026, 10, 2), D(2026, 10, 2), D(2026, 10, 3), D(2026, 10, 3), D(2026, 10, 3), D(2026, 10, 3)],
+        "hora": [dt.time(9, 0)] * 7, "estatus": ["P", "F", "N", "N", "N", "C", "P"],
+        "almacen_id": [11, 11, 12, 11, 12, 11, 1], "vendedor_id": [1, 1, 2, 1, 2, 1, 1],
+        "orden_compra": ["14109-1-3-2236", "1409-2-3-100", "12067-2-3-7464", "54059-1-3-5", "99999-1-3-9", "14109-1-3-1", "14109-1-3-7"],
     })
     _w(pqd, "remision_det", {
-        "docto_ve_id": [1, 1, 2, 3, 3, 4, 5, 6], "articulo_id": [100, 200, 100, 200, 300, 100, 300, 100],
-        "unidades": [1.0, 4.0, 2.0, 10.0, 4.0, 3.0, 5.0, 99.0],
-        "precio_unitario": [24.5, 34.5, 24.5, 34.5, 34.5, 24.5, 34.5, 24.5],
-        "precio_total_neto": [24.5, 138.0, 49.0, 345.0, 138.0, 73.5, 172.5, 2425.5],
+        "docto_ve_id": [1, 1, 2, 3, 3, 4, 5, 6, 7], "articulo_id": [100, 200, 100, 200, 300, 100, 300, 100, 100],
+        "unidades": [1.0, 4.0, 2.0, 10.0, 4.0, 3.0, 5.0, 99.0, 50.0],
+        "precio_unitario": [24.5, 34.5, 24.5, 34.5, 34.5, 24.5, 34.5, 24.5, 24.5],
+        "precio_total_neto": [24.5, 138.0, 49.0, 345.0, 138.0, 73.5, 172.5, 2425.5, 1225.0],
     })
     _w(pqd, "doctos_in_enc", {
         "docto_in_id": [10, 11, 12], "folio": ["DI1", "DI2", "DI3"],

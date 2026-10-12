@@ -59,3 +59,10 @@ def test_sql_permitido_y_comentarios():
 def test_duckdb_sin_acceso_a_archivos(empresa):
     with pytest.raises(Exception):
         q(empresa, "SELECT * FROM read_csv('/etc/passwd')")
+
+
+def test_almacen_general_y_cancelada_fuera_pero_facturada_y_pendiente_dentro(empresa):
+    folios = {r[0] for r in q(empresa, "SELECT DISTINCT folio FROM fact_visita")}
+    assert "RM7" not in folios            # almacen general (id 1): no es camioneta
+    assert "RM6" not in folios            # cancelada
+    assert {"RM1", "RM2"} <= folios       # P (pendiente) y F (facturada) si cuentan
