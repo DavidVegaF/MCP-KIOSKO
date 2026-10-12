@@ -8,5 +8,5 @@ path = "data/dtodo/analitica.duckdb"
 [server]
 host = "127.0.0.1"
 port = 8100
-public_host = "mac-mini-de-dtodo-mac.<tu-tailnet>.ts.net"
+public_host = "microsip.latienditarosa.mx"
 token_env = "MCP_TOKEN_DTODO"

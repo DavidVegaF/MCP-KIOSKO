@@ -10,7 +10,7 @@ path = "data/korner/analitica.duckdb"
 [server]
 host = "127.0.0.1"                    # solo local: lo publica Tailscale Funnel
 port = 8101
-public_host = "mac-mini-de-dtodo-mac.<tu-tailnet>.ts.net"   # el Host que veran las peticiones publicas
+public_host = "korner.latienditarosa.mx"   # hostname publico del Cloudflare Tunnel (se valida el header Host)
 token_env = "MCP_TOKEN_KORNER"        # variable de entorno con el token (NUNCA en este archivo)
 
 [limites]

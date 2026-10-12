@@ -14,7 +14,7 @@ en vez de stdio/SSH, y con **una instancia por empresa** (un conector cada una).
 ```
 Firebird (BI_READER, solo lectura)           Servidor Windows, 02:00
    └─ etl/extract.py ── Parquet ──scp──►  Mac Mini ── scripts/rebuild.sh ──► analitica.duckdb (reemplazo atómico)
-                                              └─ microsip_mcp (HTTP, 127.0.0.1:8101) ◄── Tailscale Funnel ◄── Claude
+                                              └─ microsip_mcp (HTTP, 127.0.0.1:8101) ◄── Cloudflare Tunnel ◄── Claude
                                                    https://<host>/<TOKEN>/mcp
 ```
 
@@ -53,18 +53,27 @@ pytest                      # 37 pruebas: reglas, guardas SQL, herramientas, ETL
    chmod 600 ~/.config/microsip-mcp/korner.env
    ```
 5. **Arrancar** con `scripts/run_mcp.sh korner` (o launchd: `scripts/launchd/`).
-6. **Publicar** con Tailscale Funnel (un puerto HTTPS por empresa; así el token queda intacto en la ruta):
-   `tailscale funnel --bg --https=443 http://127.0.0.1:8100` (dtodo) y `tailscale funnel --bg --https=8443 http://127.0.0.1:8101` (korner).
-   *(Sintaxis a confirmar con `tailscale funnel --help` según la versión instalada.)*
+6. **Publicar con el Cloudflare Tunnel que ya existe en la Mac** (el mismo que sirve `microsip.latienditarosa.mx` → `localhost:8899`).
+   Se agrega un hostname más en `~/.cloudflared/config.yml`, **antes** de la regla final `http_status:404`:
+   ```yaml
+   ingress:
+     - hostname: microsip.latienditarosa.mx
+       service: http://localhost:8899
+     - hostname: korner.latienditarosa.mx      # nuevo conector
+       service: http://localhost:8101
+     - service: http_status:404
+   ```
+   Luego `cloudflared tunnel route dns <ID-del-tunel> korner.latienditarosa.mx` y reiniciar cloudflared
+   (haz respaldo de `config.yml` antes: un error aquí tumba también el conector de DTODO).
 7. **Conector en Claude**: Ajustes → Conectores → *Agregar conector personalizado* → URL
-   `https://<host>.ts.net:8443/<TOKEN>/mcp`.
+   `https://korner.latienditarosa.mx/<TOKEN>/mcp`.
 
 ## Pendiente (honesto)
 
 - **No probado contra Firebird real**: `etl/korner/queries/*.sql` usan nombres de columna conocidos (ARTICULOS, ALMACENES,
   CLAVES_ARTICULOS…) y otros por confirmar (`DOCTOS_VE.ORDEN_COMPRA`, `HORA`, `VENDEDOR_ID`, `DOCTOS_IN.CANCELADO`…).
   `etl/discover_firebird.py` existe para confirmarlos antes de extraer. `firebird-driver` tampoco se probó aquí.
-- Funnel/launchd/tarea de Windows: plantillas sin probar en tu equipo.
+- launchd, tarea de Windows y cambios al túnel: plantillas sin probar en tu equipo.
 - Importes **sin IVA** (el original reportaba con IVA); con IVA llega cuando se extraiga `IMPUESTOS_DOCTOS_VE_DET`.
 - Herramientas del original (`abc`, `sin_movimiento`, `recomendacion_*`, `master`, `clasificadores`) y el perfil `dtodo`:
   se portan cuando esté el código original.
