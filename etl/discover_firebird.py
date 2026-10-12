@@ -1,7 +1,7 @@
 """Descubre el esquema REAL de la base Microsip nueva (solo metadatos y conteos, sin datos personales).
 
 Sirve para confirmar los nombres de columna que usan etl/korner/queries/*.sql antes de extraer.
-Correr en el servidor Windows y pegar el reporte:
+Correr donde llegue a Firebird (la Mac llega a 192.168.1.2) y pegar el reporte:
     python etl/discover_firebird.py --ini etl/etl.ini > discover_report.txt
 """
 from __future__ import annotations

@@ -72,7 +72,7 @@ pytest                      # 37 pruebas: reglas, guardas SQL, herramientas, ETL
 
 - **No probado contra Firebird real**: `etl/korner/queries/*.sql` usan nombres de columna conocidos (ARTICULOS, ALMACENES,
   CLAVES_ARTICULOS…) y otros por confirmar (`DOCTOS_VE.ORDEN_COMPRA`, `HORA`, `VENDEDOR_ID`, `DOCTOS_IN.CANCELADO`…).
-  `etl/discover_firebird.py` existe para confirmarlos antes de extraer. `firebird-driver` tampoco se probó aquí.
+  `etl/discover_firebird.py` existe para confirmarlos antes de extraer. El driver `firebirdsql` (el mismo que usa `grupo-korner` en la Mac) tampoco se probó contra el servidor desde aquí.
 - launchd, tarea de Windows y cambios al túnel: plantillas sin probar en tu equipo.
 - Importes **sin IVA** (el original reportaba con IVA); con IVA llega cuando se extraiga `IMPUESTOS_DOCTOS_VE_DET`.
 - Herramientas del original (`abc`, `sin_movimiento`, `recomendacion_*`, `master`, `clasificadores`) y el perfil `dtodo`:

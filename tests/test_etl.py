@@ -51,3 +51,16 @@ def test_decimales_a_float_y_trim(tmp_path):
 def test_queries_del_repo_tienen_encabezado_params():
     for f in (RAIZ / "etl" / "korner" / "queries").glob("*.sql"):
         assert f.read_text().lstrip().startswith("-- params:"), f.name
+
+
+def test_credenciales_ini_y_env(tmp_path, monkeypatch):
+    import pytest
+    import fb
+    for k in ("FB_DATABASE", "FB_USER", "FB_PASSWORD", "FB_HOST", "FB_CHARSET"):
+        monkeypatch.delenv(k, raising=False)
+    with pytest.raises(SystemExit):
+        fb.cargar_credenciales(None)                     # sin credenciales no arranca
+    ini = tmp_path / "etl.ini"
+    ini.write_text("﻿[firebird]\nhost = 192.168.1.2\ndatabase = KORNER\nuser = BI_READER\npassword = x\n", encoding="utf-8")
+    cfg = fb.cargar_credenciales(ini)                    # BOM utf-8-sig tolerado
+    assert cfg["host"] == "192.168.1.2" and cfg["database"] == "KORNER" and cfg["charset"] == "WIN1252"

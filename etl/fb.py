@@ -1,4 +1,8 @@
-"""Conexion de SOLO LECTURA a Firebird (Microsip). Credenciales desde un .ini fuera de git o variables de entorno."""
+"""Conexion de SOLO LECTURA a Firebird (Microsip) con `firebirdsql` (driver Python puro, sin fbclient.dll).
+
+Mismos parametros que ya usa la Mac en grupo-korner/test_fb.py: wire_crypt=False y autenticacion Srp.
+Credenciales desde un .ini fuera de git o variables de entorno FB_*; nunca en el codigo.
+"""
 from __future__ import annotations
 
 import configparser
@@ -10,8 +14,8 @@ def cargar_credenciales(ini: Path | None) -> dict:
     cfg = {
         "host": os.environ.get("FB_HOST", "localhost"), "port": os.environ.get("FB_PORT", "3050"),
         "database": os.environ.get("FB_DATABASE", ""), "user": os.environ.get("FB_USER", ""),
-        "password": os.environ.get("FB_PASSWORD", ""), "charset": os.environ.get("FB_CHARSET", "ISO8859_1"),
-        "client_library": os.environ.get("FB_CLIENT_LIBRARY", ""),
+        "password": os.environ.get("FB_PASSWORD", ""), "charset": os.environ.get("FB_CHARSET", "WIN1252"),
+        "readonly": os.environ.get("FB_READONLY", "true"),
     }
     if ini:
         cp = configparser.ConfigParser()
@@ -25,9 +29,11 @@ def cargar_credenciales(ini: Path | None) -> dict:
 
 
 def conectar(cfg: dict):
-    from firebird.driver import connect, driver_config   # pip install firebird-driver
+    import firebirdsql                                # pip install firebirdsql
 
-    if cfg.get("client_library"):
-        driver_config.fb_client_library.value = cfg["client_library"]
-    return connect(f"{cfg['host']}/{cfg['port']}:{cfg['database']}",
-                   user=cfg["user"], password=cfg["password"], charset=cfg["charset"])
+    return firebirdsql.connect(
+        host=cfg["host"], port=int(cfg["port"]), database=cfg["database"],
+        user=cfg["user"], password=cfg["password"], charset=cfg["charset"],
+        wire_crypt=False, auth_plugin_name="Srp",
+        readonly=str(cfg.get("readonly", "true")).lower() not in ("0", "false", "no"),
+    )

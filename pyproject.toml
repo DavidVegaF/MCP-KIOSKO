@@ -11,7 +11,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-etl = ["firebird-driver>=1.10", "openpyxl>=3.1"]
+etl = ["firebirdsql>=1.3", "openpyxl>=3.1"]
 dev = ["pytest>=8", "httpx>=0.27", "openpyxl>=3.1"]
 
 [project.scripts]
