@@ -90,6 +90,23 @@ LEFT JOIN dim_articulo a ON a.articulo_id = d.articulo_id
 WHERE e.concepto_in_id IN ({{CONCEPTOS_DEVOLUCION}})
   AND COALESCE(e.cancelado, 'N') <> 'S';
 
+-- Cambios de mercancia / salidas a tienda (DOCTOS_IN, concepto de reglas.conceptos_cambio, ej. 7974): producto que
+-- SALE de la camioneta hacia el kiosko sin remision (consumo real de inventario, sin ingreso).
+CREATE TABLE fact_cambio_det AS
+SELECT
+  e.docto_in_id, e.folio, e.fecha, e.almacen_id,
+  COALESCE(al.almacen, 'ALMACEN ' || e.almacen_id) AS camioneta,
+  e.concepto_in_id, TRIM(e.descripcion) AS descripcion,
+  d.articulo_id, COALESCE(a.clave, '') AS clave, COALESCE(a.nombre, '') AS articulo,
+  COALESCE(a.linea, 'SIN LINEA') AS linea,
+  d.unidades, d.costo_total
+FROM read_parquet('{{PARQUET}}/doctos_in_enc.parquet') e
+JOIN read_parquet('{{PARQUET}}/doctos_in_det.parquet') d ON d.docto_in_id = e.docto_in_id
+LEFT JOIN dim_almacen al ON al.almacen_id = e.almacen_id
+LEFT JOIN dim_articulo a ON a.articulo_id = d.articulo_id
+WHERE e.concepto_in_id IN ({{CONCEPTOS_CAMBIO}})
+  AND COALESCE(e.cancelado, 'N') <> 'S';
+
 -- Vendedor probable de cada camioneta por dia (la devolucion no trae vendedor y una camioneta
 -- la usan varios vendedores): el que mas vendio ese dia en esa camioneta.
 CREATE TABLE vendedor_camioneta_dia AS
@@ -108,6 +125,11 @@ FROM fact_remision_det f LEFT JOIN dim_kiosko k ON k.kiosko_id = f.kiosko_id;
 CREATE VIEW v_visita AS
 SELECT f.*, k.nombre AS kiosko, k.zona, k.zona_k, k.poblacion, k.lat, k.lon
 FROM fact_visita f LEFT JOIN dim_kiosko k ON k.kiosko_id = f.kiosko_id;
+
+CREATE VIEW v_cambio AS
+SELECT d.*, COALESCE(vc.vendedor, 'SIN VENDEDOR (ese dia)') AS vendedor, vc.vendedor_id
+FROM fact_cambio_det d
+LEFT JOIN vendedor_camioneta_dia vc ON vc.almacen_id = d.almacen_id AND vc.fecha = d.fecha;
 
 CREATE VIEW v_devolucion AS
 SELECT d.*, COALESCE(vc.vendedor, 'SIN VENDEDOR (ese dia)') AS vendedor, vc.vendedor_id
@@ -143,31 +165,26 @@ LEFT JOIN c ON c.articulo_id = s.articulo_id AND c.almacen_id = s.almacen_id
 LEFT JOIN dim_almacen al ON al.almacen_id = s.almacen_id
 WHERE s.existencia <> 0 OR COALESCE(c.comprometido, 0) <> 0;
 
--- Demanda de ruta: venta de remisiones MENOS devoluciones, ponderada 50/30/20 sobre los ultimos 90 dias
--- (ventanas 0-30, 31-60, 61-90 dias contra la fecha de corte), en piezas por dia.
+-- Demanda de ruta = salida fisica neta de las camionetas: remisiones + cambios/salidas a tienda - devoluciones,
+-- ponderada 50/30/20 sobre los ultimos 90 dias (ventanas 0-30, 31-60, 61-90 dias contra la fecha de corte), piezas/dia.
 CREATE TABLE demanda_ruta AS
-WITH v AS (
+WITH m AS (
+  SELECT articulo_id, fecha,  unidades AS u FROM fact_remision_det
+  UNION ALL SELECT articulo_id, fecha,  unidades FROM fact_cambio_det
+  UNION ALL SELECT articulo_id, fecha, -unidades FROM fact_devolucion_det
+), w AS (
   SELECT articulo_id,
-         SUM(CASE WHEN fecha >  h.hoy - 30 THEN unidades ELSE 0 END) AS v1,
-         SUM(CASE WHEN fecha <= h.hoy - 30 AND fecha > h.hoy - 60 THEN unidades ELSE 0 END) AS v2,
-         SUM(CASE WHEN fecha <= h.hoy - 60 AND fecha > h.hoy - 90 THEN unidades ELSE 0 END) AS v3,
-         MAX(fecha) AS ultima_venta
-  FROM fact_remision_det, param h WHERE fecha > h.hoy - 90 GROUP BY 1
-), d AS (
-  SELECT articulo_id,
-         SUM(CASE WHEN fecha >  h.hoy - 30 THEN unidades ELSE 0 END) AS d1,
-         SUM(CASE WHEN fecha <= h.hoy - 30 AND fecha > h.hoy - 60 THEN unidades ELSE 0 END) AS d2,
-         SUM(CASE WHEN fecha <= h.hoy - 60 AND fecha > h.hoy - 90 THEN unidades ELSE 0 END) AS d3
-  FROM fact_devolucion_det, param h WHERE fecha > h.hoy - 90 GROUP BY 1
+         SUM(CASE WHEN fecha >  h.hoy - 30 THEN u ELSE 0 END) AS n1,
+         SUM(CASE WHEN fecha <= h.hoy - 30 AND fecha > h.hoy - 60 THEN u ELSE 0 END) AS n2,
+         SUM(CASE WHEN fecha <= h.hoy - 60 AND fecha > h.hoy - 90 THEN u ELSE 0 END) AS n3,
+         MAX(CASE WHEN u > 0 THEN fecha END) AS ultima_venta
+  FROM m, param h WHERE fecha > h.hoy - 90 GROUP BY 1
 )
-SELECT v.articulo_id,
-       GREATEST(v.v1 - COALESCE(d.d1, 0), 0) AS u_0_30,
-       GREATEST(v.v2 - COALESCE(d.d2, 0), 0) AS u_31_60,
-       GREATEST(v.v3 - COALESCE(d.d3, 0), 0) AS u_61_90,
-       (0.5 * GREATEST(v.v1 - COALESCE(d.d1, 0), 0) + 0.3 * GREATEST(v.v2 - COALESCE(d.d2, 0), 0)
-        + 0.2 * GREATEST(v.v3 - COALESCE(d.d3, 0), 0)) / 30.0 AS dem_diaria,
-       v.ultima_venta
-FROM v LEFT JOIN d ON d.articulo_id = v.articulo_id;
+SELECT articulo_id,
+       GREATEST(n1, 0) AS u_0_30, GREATEST(n2, 0) AS u_31_60, GREATEST(n3, 0) AS u_61_90,
+       (0.5 * GREATEST(n1, 0) + 0.3 * GREATEST(n2, 0) + 0.2 * GREATEST(n3, 0)) / 30.0 AS dem_diaria,
+       ultima_venta
+FROM w;
 
 -- Compras en camino: ordenes (tipo O) con unidades por recibir.
 CREATE TABLE compra_en_transito AS

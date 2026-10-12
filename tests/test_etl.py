@@ -71,3 +71,10 @@ def test_listas_vacias_no_descartan_todo():
     sql = renderizar("{{ESTATUS_EXCLUIDOS}}|{{ALMACENES_EXCLUIDOS}}|{{CONCEPTOS_DEVOLUCION}}", Path("/x"),
                      {"estatus_excluidos": [], "almacenes_excluidos": [], "conceptos_devolucion": []}, "2026-01-01")
     assert sql == "'__NINGUNO__'|-1|-1"
+
+
+def test_conceptos_de_movimiento_unen_devolucion_y_cambio():
+    sql = extract.renderizar("{CONCEPTOS_MOVIMIENTO}|{CONCEPTOS_CAMBIO}|{CONCEPTOS_DEVOLUCION}",
+                             {"conceptos_devolucion": [7972], "conceptos_cambio": [7974]})
+    assert sql == "7972, 7974|7974|7972"
+    assert extract.renderizar("{CONCEPTOS_CAMBIO}|{CONCEPTOS_MOVIMIENTO}", {"conceptos_devolucion": [7972]}) == "-1|7972"

@@ -66,3 +66,12 @@ def test_almacen_general_y_cancelada_fuera_pero_facturada_y_pendiente_dentro(emp
     assert "RM7" not in folios            # almacen general (id 1): no es camioneta
     assert "RM6" not in folios            # cancelada
     assert {"RM1", "RM2"} <= folios       # P (pendiente) y F (facturada) si cuentan
+
+
+def test_cambios_7974_no_son_devolucion_ni_venta_pero_si_demanda(empresa):
+    assert {r[0] for r in q(empresa, "SELECT folio FROM fact_cambio_det")} == {"DI4"}          # solo el concepto 7974
+    assert "DI4" not in {r[0] for r in q(empresa, "SELECT folio FROM fact_devolucion_det")}
+    assert q(empresa, "SELECT COUNT(*) FROM fact_remision_det WHERE folio='DI4'")[0][0] == 0   # no es remision: sin ingreso
+    # baraja (100): remisiones 6 + cambio 3 - devolucion 1 = 8 piezas en 0-30 d -> 0.5*8/30 por dia
+    assert q(empresa, "SELECT u_0_30, ROUND(dem_diaria*30, 2) FROM demanda_ruta WHERE articulo_id = 100")[0] == (8.0, 4.0)
+    assert q(empresa, "SELECT vendedor FROM v_cambio")[0][0] == "VENDEDOR A"                    # el que mas vendio ese dia en la camioneta

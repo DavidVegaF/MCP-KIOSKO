@@ -33,7 +33,7 @@ def test_herramientas_registradas(empresa):
     nombres = {t.name for t in run(construir_mcp(empresa).list_tools())}
     assert nombres == {"diccionario", "ventas", "ranking_camionetas", "ranking_vendedores", "productos_ruta",
                        "devoluciones_ruta", "kiosko_geolocalizar", "visitas", "articulo", "calidad_datos", "sql",
-                       "existencias", "sugerido_compra", "sin_movimiento", "stock_camioneta"}
+                       "existencias", "sugerido_compra", "sin_movimiento", "stock_camioneta", "cambios_ruta"}
 
 
 def test_ventas_por_camioneta(empresa):
@@ -136,7 +136,7 @@ def test_http_cliente_mcp_real(servidor):
                 res = await s.call_tool("ranking_camionetas", {"desde": "2026-10-01", "hasta": "2026-10-03"})
                 return len(tools.tools), texto(res)
     n, out = run(go())
-    assert n == 15 and "Camioneta 1" in out
+    assert n == 16 and "Camioneta 1" in out
 
 
 def test_http_host_publico_permitido_y_host_ajeno_rechazado(servidor):
@@ -179,3 +179,12 @@ def test_sin_movimiento_y_stock_camioneta(empresa):
     assert "2000112" not in sm                                              # la baraja si se vende: no aparece
     sc = run(llamar(empresa, "stock_camioneta", camioneta="camioneta 1"))
     assert "2000112" in sc and "| 5.00 |" in sc
+
+
+def test_cambios_ruta_entregado_contra_devuelto(empresa):
+    out = run(llamar(empresa, "cambios_ruta", desde="2026-10-01", hasta="2026-10-03", agrupar_por="articulo"))
+    fila = [l for l in out.splitlines() if "BARAJA" in l][0]
+    assert "| 3.00 |" in fila and "| 30.00 |" in fila and "| 1.00 |" in fila and "| 2.00 |" in fila   # entregado 3, costo 30, devuelto 1, dif 2
+    assert "GLOBO" in out                                                                              # solo devuelto (FULL JOIN)
+    por_cam = run(llamar(empresa, "cambios_ruta", desde="2026-10-01", hasta="2026-10-03", agrupar_por="camioneta"))
+    assert "Camioneta 1" in por_cam

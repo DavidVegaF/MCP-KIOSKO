@@ -26,9 +26,17 @@ import pyarrow.parquet as pq
 ARCHIVOS_EXTERNOS = {"dim_kiosko"}
 
 
+def _ints(valores) -> str:
+    return ", ".join(str(int(c)) for c in valores) or "-1"          # int(): sin inyeccion; vacio -> id imposible
+
+
 def renderizar(sql: str, reglas: dict) -> str:
-    conceptos = ", ".join(str(int(c)) for c in reglas.get("conceptos_devolucion", [7972]))   # int(): sin inyeccion
-    return sql.replace("{CONCEPTOS_DEVOLUCION}", conceptos)
+    dev = reglas.get("conceptos_devolucion", [7972])
+    cam = reglas.get("conceptos_cambio", [])
+    mov = sorted({int(c) for c in list(dev) + list(cam)})
+    return (sql.replace("{CONCEPTOS_DEVOLUCION}", _ints(dev))
+               .replace("{CONCEPTOS_CAMBIO}", _ints(cam))
+               .replace("{CONCEPTOS_MOVIMIENTO}", _ints(mov)))
 
 
 def parametros(sql: str, desde: dt.date) -> list:

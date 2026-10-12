@@ -97,6 +97,7 @@ Fecha de corte (ultima venta cargada): **{hoy}**. Los datos se reconstruyen cada
 |---|---|
 | `v_venta` | Un renglon de remision: fecha, folio, camioneta, vendedor, kiosko_id, kiosko, zona, lat, lon, clave, articulo, linea, unidades, importe |
 | `v_visita` | Una remision (visita): fecha, hora, folio, camioneta, vendedor, kiosko_id, kiosko, zona, lat, lon, importe, piezas, renglones |
+| `v_cambio` | Un renglon entregado en cambio (salida a tienda): fecha, folio, camioneta, vendedor (probable), clave, articulo, linea, unidades, costo_total |
 | `v_devolucion` | Un renglon devuelto: fecha, folio, camioneta, vendedor (probable), clave, articulo, linea, unidades, costo_total |
 | `dim_kiosko` | Catalogo: kiosko_id, id_viejo, nombre, tipo, zona, zona_k, lat, lon, domicilio, colonia, cp, poblacion, estado |
 | `dim_articulo`, `dim_almacen`, `dim_vendedor` | Catalogos |
@@ -104,9 +105,15 @@ Fecha de corte (ultima venta cargada): **{hoy}**. Los datos se reconstruyen cada
 | `calidad_kiosko` | Ids de orden de compra que no se pudieron resolver |
 | `param` | `hoy` = fecha de corte |
 
+## Cambios de mercancia
+- Son **cambios fisicos a los kioscos**: DOCTOS_IN con concepto {cambio} (salida a tienda). Sacan producto de la camioneta **sin remision**, asi que no
+  aparecen en `ventas` (no hay ingreso) pero **si cuentan como consumo de inventario** en la demanda del sugerido. Se ven con `cambios_ruta`
+  (`v_cambio`) y se comparan con las devoluciones.
+
 ## Inventario y sugeridos
 - **Existencia** = entradas - salidas acumuladas de SALDOS_IN por articulo y almacen. Tipos: `general` ({general}), `camioneta`, `otro`.
-- **Venta diaria de ruta** = (0.5 x piezas 0-30 d + 0.3 x piezas 31-60 d + 0.2 x piezas 61-90 d) / 30, ya **netas de devoluciones**.
+- **Demanda diaria de ruta** = (0.5 x piezas 0-30 d + 0.3 x piezas 31-60 d + 0.2 x piezas 61-90 d) / 30, donde las piezas son la
+  **salida fisica de las camionetas: remisiones + cambios de mercancia (salida a tienda) - devoluciones**.
 - **En camino** = unidades por recibir de ordenes de compra (tipo O).
 - **Sugerido** = max(0, venta diaria x (entrega + cobertura) - (disponible general [+ camionetas] + en camino)). Por defecto 30 dias de cobertura
   y 20 de entrega (ajustables). **No considera estacionalidad, tendencia explicita, ni clase ABC; los minimos de compra solo se muestran.**
@@ -134,6 +141,7 @@ def registrar(mcp: FastMCP, emp: Empresa) -> None:
             estatus_excl=", ".join(f"'{e}'" for e in r.get("estatus_excluidos", ["C"])),
             conceptos=", ".join(str(c) for c in r.get("conceptos_devolucion", [7972])),
             general=r.get("almacen_general", "sin definir"),
+            cambio=", ".join(str(c) for c in r.get("conceptos_cambio", [])) or "(sin definir)",
         )
 
     # ---------------------------------------------------------------- ventas
@@ -357,6 +365,39 @@ def registrar(mcp: FastMCP, emp: Empresa) -> None:
         c2, f2, t2 = db.consultar(emp, "SELECT * FROM calidad_kiosko LIMIT 25")
         return (_salida(c1, f1, False) + "\n\n**Ids de orden de compra sin resolver (top 25):**\n\n" + _salida(c2, f2, t2))
 
+    # ---------------------------------------------------------------- cambios de mercancia
+    @mcp.tool()
+    def cambios_ruta(
+        desde: str | None = None, hasta: str | None = None, agrupar_por: str = "articulo",
+        camioneta: str | None = None, vendedor: str | None = None, articulo: str | None = None,
+        linea: str | None = None, top: int = 30,
+    ) -> str:
+        """Cambios fisicos de mercancia a los kioscos (salida a tienda, DOCTOS_IN concepto de cambio) contra lo que devuelven.
+
+        Un cambio saca producto de la camioneta sin remision (no hay ingreso). agrupar_por: articulo, camioneta, vendedor,
+        mes, linea. Muestra lo entregado en cambio, lo devuelto en el mismo periodo y la diferencia. El vendedor es el que mas
+        vendio ese dia en esa camioneta (el documento no lo trae)."""
+        g = GRUPOS_DEV.get(agrupar_por)
+        if g is None:
+            raise ValueError(f"agrupar_por debe ser uno de: {', '.join(GRUPOS_DEV)}")
+        d, h = _rango(emp, desde, hasta)
+        conds, p = ["fecha BETWEEN ? AND ?"], [d, h]
+        _like("camioneta", camioneta, conds, p)
+        _like("vendedor", vendedor, conds, p)
+        _like("clave || ' ' || articulo", articulo, conds, p)
+        _like("linea", linea, conds, p)
+        w = _where(conds)
+        orden = "grupo" if agrupar_por == "mes" else "entregado_en_cambio DESC NULLS LAST"
+        sql = f"""
+          WITH c AS (SELECT {g} AS grupo, SUM(unidades) AS u, SUM(costo_total) AS cst, COUNT(DISTINCT docto_in_id) AS n
+                     FROM v_cambio {w} GROUP BY 1),
+               d AS (SELECT {g} AS grupo, SUM(unidades) AS u FROM v_devolucion {w} GROUP BY 1)
+          SELECT COALESCE(c.grupo, d.grupo) AS grupo, ROUND(c.u,2) AS entregado_en_cambio, ROUND(c.cst,2) AS costo,
+                 c.n AS movimientos, ROUND(d.u,2) AS devuelto, ROUND(COALESCE(c.u,0) - COALESCE(d.u,0),2) AS diferencia
+          FROM c FULL OUTER JOIN d ON d.grupo = c.grupo ORDER BY {orden} LIMIT {int(max(1, min(top, vis)))}"""
+        c_, f, t = db.consultar(emp, sql, p + p)
+        return _salida(c_, f, t, f"Periodo {d} a {h}. diferencia > 0: salio mas de lo que regreso. Costo = costo de la mercancia entregada.")
+
     # ---------------------------------------------------------------- inventario y compras
     @mcp.tool()
     def existencias(
@@ -364,8 +405,8 @@ def registrar(mcp: FastMCP, emp: Empresa) -> None:
     ) -> str:
         """Existencias por articulo: almacen general, camionetas, lo que viene en camino, venta diaria de ruta y dias de cobertura.
 
-        Existencia = entradas - salidas acumuladas (SALDOS_IN). La venta diaria es la de ruta, neta de devoluciones y ponderada
-        50/30/20 sobre los ultimos 90 dias. Ordenado por venta diaria (los que mas rotan primero)."""
+        Existencia = entradas - salidas acumuladas (SALDOS_IN). La venta diaria es la salida de ruta (remisiones + cambios - devoluciones),
+        ponderada 50/30/20 sobre los ultimos 90 dias. Ordenado por venta diaria (los que mas rotan primero)."""
         conds, p = [], []
         _like("clave || ' ' || nombre", articulo, conds, p)
         _like("linea", linea, conds, p)
@@ -387,7 +428,7 @@ def registrar(mcp: FastMCP, emp: Empresa) -> None:
     ) -> str:
         """Sugerido de compra para el almacen general.
 
-        Referencia: venta diaria de ruta (neta de devoluciones, ponderada 50/30/20 sobre 90 dias). Necesidad = venta diaria x
+        Referencia: salida diaria de las camionetas = remisiones + cambios de mercancia - devoluciones, ponderada 50/30/20 sobre 90 dias. Necesidad = venta diaria x
         (tiempo de entrega + dias de cobertura). Posicion = existencia disponible (general, y camionetas si incluir_camionetas)
         + ordenes de compra por recibir. Sugerido = necesidad - posicion, redondeado hacia arriba; solo se listan los positivos.
         No usa estacionalidad ni tendencia (ver diccionario)."""

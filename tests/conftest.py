@@ -38,6 +38,7 @@ token_env = "MCP_TOKEN_KORNER"
 [reglas]
 estatus_excluidos = ["C"]
 conceptos_devolucion = [7972]
+conceptos_cambio = [7974]
 almacenes_excluidos = [1]
 almacen_general = 1
 """)
@@ -76,12 +77,14 @@ almacen_general = 1
         "precio_total_neto": [24.5, 138.0, 49.0, 345.0, 138.0, 73.5, 172.5, 2425.5, 1225.0],
     })
     _w(pqd, "doctos_in_enc", {
-        "docto_in_id": [10, 11, 12], "folio": ["DI1", "DI2", "DI3"],
-        "fecha": [D(2026, 10, 2), D(2026, 10, 3), D(2026, 10, 3)], "almacen_id": [11, 12, 11],
-        "concepto_in_id": [7972, 7972, 123], "cancelado": ["N", "N", "N"], "descripcion": ["dev kiosko", "dev", "otro"],
+        "docto_in_id": [10, 11, 12, 13], "folio": ["DI1", "DI2", "DI3", "DI4"],
+        "fecha": [D(2026, 10, 2), D(2026, 10, 3), D(2026, 10, 3), D(2026, 10, 2)], "almacen_id": [11, 12, 11, 11],
+        "concepto_in_id": [7972, 7972, 123, 7974], "cancelado": ["N", "N", "N", "N"],
+        "descripcion": ["dev kiosko", "dev", "otro", "cambio"],
     })
     _w(pqd, "doctos_in_det", {
-        "docto_in_id": [10, 11, 12], "articulo_id": [100, 200, 100], "unidades": [1.0, 2.0, 50.0], "costo_total": [10.0, 20.0, 500.0],
+        "docto_in_id": [10, 11, 12, 13], "articulo_id": [100, 200, 100, 100], "unidades": [1.0, 2.0, 50.0, 3.0],
+        "costo_total": [10.0, 20.0, 500.0, 30.0],
     })
     # inventario: art 100 -> general 100 (+5 en camioneta 1) y 10 por recibir; art 200 -> general 2; art 300 -> sin stock
     _w(pqd, "saldos_in", {

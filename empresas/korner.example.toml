@@ -20,7 +20,8 @@ filas_sql = 2000
 [reglas]
 estatus_excluidos = ["C"]             # DOCTOS_VE tipo R: C=cancelada (no cuenta); F=facturada y P=pendiente SI cuentan
 almacenes_excluidos = [19]            # 19 = Almacen general: el canal son solo las camionetas
-conceptos_devolucion = [7972]         # DOCTOS_IN: devolucion del kiosko a la camioneta
+conceptos_devolucion = [7972]         # DOCTOS_IN: devolucion del kiosko a la camioneta (entrada)
+conceptos_cambio = [7974]             # DOCTOS_IN: cambios de mercancia / salida a tienda (salida de la camioneta, sin remision)
 
 [etl]
 desde = "2024-11-01"                  # las primeras remisiones de ruta son de 2024-11-11
