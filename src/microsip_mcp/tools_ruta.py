@@ -360,6 +360,9 @@ def registrar(mcp: FastMCP, emp: Empresa) -> None:
           UNION ALL SELECT 'remisiones sin kiosko resuelto', COUNT(DISTINCT docto_ve_id) FROM fact_remision_det WHERE kiosko_id IS NULL
           UNION ALL SELECT 'remisiones sin vendedor', COUNT(DISTINCT docto_ve_id) FROM fact_remision_det WHERE vendedor_id IS NULL
           UNION ALL SELECT 'kioscos sin coordenadas', COUNT(*) FROM dim_kiosko WHERE lat IS NULL
+          UNION ALL SELECT 'existencias en almacen general (filas; 0 = revisar almacen_general)', COUNT(*) FROM stock WHERE tipo_almacen = 'general'
+          UNION ALL SELECT 'existencias en camionetas (filas)', COUNT(*) FROM stock WHERE tipo_almacen = 'camioneta'
+          UNION ALL SELECT 'articulos con existencia negativa en algun almacen', COUNT(DISTINCT articulo_id) FROM stock WHERE existencia < 0
           UNION ALL SELECT 'ids viejos ambiguos (excluidos)', COUNT(*) FROM (SELECT id_viejo FROM dim_kiosko
                       WHERE id_viejo IS NOT NULL GROUP BY 1 HAVING COUNT(*) > 1)""")
         c2, f2, t2 = db.consultar(emp, "SELECT * FROM calidad_kiosko LIMIT 25")

@@ -55,6 +55,12 @@ def construir(config: Path, parquet: Path, sql_dir: Path) -> Path:
             ruta = sql_dir / archivo
             if ruta.exists():
                 con.execute(renderizar(ruta.read_text(encoding="utf-8"), parquet, emp.reglas, str(hoy)))
+        if "almacen_general" not in emp.reglas:
+            print("AVISO: falta 'almacen_general = <id>' en [reglas]: las existencias del almacen general NO se clasifican", file=sys.stderr)
+        else:
+            n = con.execute("SELECT COUNT(*) FROM stock WHERE tipo_almacen = 'general'").fetchone()[0]
+            if n == 0:
+                print(f"AVISO: ninguna existencia en el almacen general {emp.reglas['almacen_general']}: revisa el id", file=sys.stderr)
         con.execute("CHECKPOINT")
     except Exception:
         con.close()

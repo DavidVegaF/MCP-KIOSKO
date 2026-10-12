@@ -37,7 +37,7 @@ Reglas de negocio y supuestos: **`docs/DISENO-RUTA.md`**.
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,etl]"
-pytest                      # 51 pruebas: reglas, guardas SQL, herramientas, ETL y HTTP con cliente MCP real
+pytest                      # 52 pruebas: reglas, guardas SQL, herramientas, ETL y HTTP con cliente MCP real
 ```
 
 ## Puesta en marcha (réplica del flujo de DTODO; ejemplo `korner`)

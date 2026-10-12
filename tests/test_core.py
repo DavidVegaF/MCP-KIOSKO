@@ -1,4 +1,8 @@
+import asyncio
+
 import pytest
+
+from microsip_mcp.server import construir_mcp
 
 from microsip_mcp import db
 from microsip_mcp.guards import SqlNoPermitido, validar_sql
@@ -75,3 +79,9 @@ def test_cambios_7974_no_son_devolucion_ni_venta_pero_si_demanda(empresa):
     # baraja (100): remisiones 6 + cambio 3 - devolucion 1 = 8 piezas en 0-30 d -> 0.5*8/30 por dia
     assert q(empresa, "SELECT u_0_30, ROUND(dem_diaria*30, 2) FROM demanda_ruta WHERE articulo_id = 100")[0] == (8.0, 4.0)
     assert q(empresa, "SELECT vendedor FROM v_cambio")[0][0] == "VENDEDOR A"                    # el que mas vendio ese dia en la camioneta
+
+
+def test_calidad_datos_reporta_inventario(empresa):
+    res = asyncio.run(construir_mcp(empresa).call_tool("calidad_datos", {}))
+    out = "\n".join(c.text for c in (res[0] if isinstance(res, tuple) else res))
+    assert "existencias en almacen general" in out and "existencias en camionetas" in out
