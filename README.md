@@ -36,37 +36,41 @@ Reglas de negocio y supuestos: **`docs/DISENO-RUTA.md`**.
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,etl]"
-pytest                      # 37 pruebas: reglas, guardas SQL, herramientas, ETL y HTTP con cliente MCP real
+pytest                      # 42 pruebas: reglas, guardas SQL, herramientas, ETL y HTTP con cliente MCP real
 ```
 
-## Puesta en marcha (por empresa; ejemplo `korner`)
+## Puesta en marcha (réplica del flujo de DTODO; ejemplo `korner`)
 
-1. **Catálogo de kioscos** (el Excel NO va al repo; es público):
-   `python etl/load_kioscos.py DAVID_RUTAS.xlsx data/korner/parquet/dim_kiosko.parquet`
-2. **Descubrir el esquema real** en el servidor Windows y confirmar nombres de columna:
-   `python etl/discover_firebird.py --ini etl/etl.ini > discover_report.txt` (copiar `etl/etl.example.ini` → `etl/etl.ini`).
-3. **Extraer y copiar**: `scripts/run_etl.example.cmd` (tarea programada 02:00) → Parquet → Mac.
-4. **Configurar** `empresas/korner.toml` (desde `.example.toml`) y el token en la Mac:
-   ```bash
-   mkdir -p ~/.config/microsip-mcp
-   echo "export MCP_TOKEN_KORNER=$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))')" > ~/.config/microsip-mcp/korner.env
-   chmod 600 ~/.config/microsip-mcp/korner.env
-   ```
-5. **Arrancar** con `scripts/run_mcp.sh korner` (o launchd: `scripts/launchd/`).
-6. **Publicar con el Cloudflare Tunnel que ya existe en la Mac** (el mismo que sirve `microsip.latienditarosa.mx` → `localhost:8899`).
-   Se agrega un hostname más en `~/.cloudflared/config.yml`, **antes** de la regla final `http_status:404`:
-   ```yaml
-   ingress:
-     - hostname: microsip.latienditarosa.mx
-       service: http://localhost:8899
-     - hostname: korner.latienditarosa.mx      # nuevo conector
-       service: http://localhost:8101
-     - service: http_status:404
-   ```
-   Luego `cloudflared tunnel route dns <ID-del-tunel> korner.latienditarosa.mx` y reiniciar cloudflared
-   (haz respaldo de `config.yml` antes: un error aquí tumba también el conector de DTODO).
-7. **Conector en Claude**: Ajustes → Conectores → *Agregar conector personalizado* → URL
-   `https://korner.latienditarosa.mx/<TOKEN>/mcp`.
+El flujo es el mismo que el del conector de DTODO: **servidor Windows extrae → `scp` a la Mac → rebuild → servicio `launchd` → Cloudflare Tunnel**.
+
+**A. En la Mac** (por SSH): instalar y arrancar el servicio. Crea el venv, el token (`~/.config/microsip-mcp/korner.env`, permisos 600) y el servicio `com.dtodo.mcp.korner`; no toca el de DTODO.
+```bash
+git clone -b ccr-9055e406-xveuq4 https://github.com/DavidVegaF/MCP-KIOSKO ~/microsip-mcp   # o git pull si ya existe
+cd ~/microsip-mcp && scripts/instalar_mac.sh korner      # al final imprime la URL con el token: no la compartas
+```
+**B. Catálogo de kioscos** (fijo, no sale de Firebird; el Excel NO va al repo). En la Mac:
+`.venv/bin/python etl/load_kioscos.py <ruta>/DAVID_RUTAS.xlsx data/korner/static/dim_kiosko.parquet`
+
+**C. Túnel**: agregar el hostname al `config.yml` de cloudflared que ya sirve a DTODO (con respaldo y validación):
+```bash
+python3 scripts/cloudflared_agregar_host.py ~/.cloudflared/config.yml korner.latienditarosa.mx 8101            # simula
+python3 scripts/cloudflared_agregar_host.py ~/.cloudflared/config.yml korner.latienditarosa.mx 8101 --aplicar
+cloudflared tunnel route dns <ID-del-tunel> korner.latienditarosa.mx
+# reiniciar cloudflared (según cómo se arrancó: brew services restart cloudflared, o launchctl)
+```
+**D. Servidor Windows** (Python 3.11+): `pip install firebirdsql pyarrow`; clonar el repo; copiar `etl\etl.example.ini` → `etl\etl.ini`
+con `host = localhost`, la ruta del `.FDB` de Korner y `BI_READER`; copiar `scripts\run_etl.example.cmd` → `scripts\run_etl.cmd` y
+poner el mismo `usuario@dirección` de la Mac que usa el `run.cmd` de DTODO. Probar a mano y registrar la tarea (02:30, para no empalmarse con DTODO):
+```powershell
+$c = Get-Credential
+$a = New-ScheduledTaskAction -Execute "C:\ruta\MCP-KIOSKO\scripts\run_etl.cmd"
+$t = New-ScheduledTaskTrigger -Daily -At 02:30
+$s = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 1) -MultipleInstances IgnoreNew
+Register-ScheduledTask -TaskName KornerETL -Action $a -Trigger $t -Settings $s -User $c.UserName -Password $c.GetNetworkCredential().Password
+```
+**E. Claude**: Ajustes → Conectores → *Agregar conector personalizado* → `https://korner.latienditarosa.mx/<TOKEN>/mcp`.
+
+Para descubrir el esquema real antes de extraer: `python etl/discover_firebird.py --ini etl/etl.ini` (donde llegue a Firebird).
 
 ## Pendiente (honesto)
 

@@ -1,6 +1,8 @@
 @echo off
-REM Servidor Windows (tarea programada 02:00, usuario con contrasena guardada, StartWhenAvailable).
-REM Copiar a scripts\run_etl.cmd y ajustar. Extrae Firebird -> Parquet, copia a la Mac y reconstruye.
+REM Servidor Windows de Microsip. Mismo patron que la extraccion de DTODO:
+REM   extrae Firebird (local) -> Parquet -> scp a la Mac -> rebuild en la Mac.
+REM Copiar a scripts\run_etl.cmd y completar MAC con el MISMO usuario@direccion que usa el run.cmd de DTODO.
+REM Registrar la tarea con un usuario real (NO SYSTEM: no ve la llave ssh) y StartWhenAvailable (ver README).
 setlocal
 set EMP=korner
 set MAC=dtodo-mac@100.77.112.121

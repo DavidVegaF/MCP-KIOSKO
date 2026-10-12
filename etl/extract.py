@@ -94,7 +94,7 @@ def main(argv=None):
         sys.exit("ERROR: remision_enc quedo vacia; no se continua (no se reemplazara la base vigente)")
     faltan = [n for n in ARCHIVOS_EXTERNOS if not (a.out / f"{n}.parquet").exists()]
     if faltan:
-        sys.exit(f"ERROR: faltan archivos externos {faltan}: corre etl/load_kioscos.py")
+        print(f"NOTA: {faltan} no estan aqui; rebuild.sh los toma de data/<empresa>/static/ en la Mac.")
     print("FIN")
 
 
