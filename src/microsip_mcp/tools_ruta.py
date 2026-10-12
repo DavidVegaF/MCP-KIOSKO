@@ -104,6 +104,14 @@ Fecha de corte (ultima venta cargada): **{hoy}**. Los datos se reconstruyen cada
 | `calidad_kiosko` | Ids de orden de compra que no se pudieron resolver |
 | `param` | `hoy` = fecha de corte |
 
+## Inventario y sugeridos
+- **Existencia** = entradas - salidas acumuladas de SALDOS_IN por articulo y almacen. Tipos: `general` ({general}), `camioneta`, `otro`.
+- **Venta diaria de ruta** = (0.5 x piezas 0-30 d + 0.3 x piezas 31-60 d + 0.2 x piezas 61-90 d) / 30, ya **netas de devoluciones**.
+- **En camino** = unidades por recibir de ordenes de compra (tipo O).
+- **Sugerido** = max(0, venta diaria x (entrega + cobertura) - (disponible general [+ camionetas] + en camino)). Por defecto 30 dias de cobertura
+  y 20 de entrega (ajustables). **No considera estacionalidad, tendencia explicita, ni clase ABC; los minimos de compra solo se muestran.**
+- Tablas: `art_inventario` (una fila por articulo), `stock` (articulo x almacen), `demanda_ruta`, `compra_en_transito`, `prov_principal`.
+
 Toda metrica de venta es `SUM(importe)` o `SUM(unidades)` sobre `v_venta`; las devoluciones `SUM(unidades)` sobre `v_devolucion`.
 Filtros de texto: coincidencia parcial, sin distinguir mayusculas ni acentos.
 """
@@ -125,6 +133,7 @@ def registrar(mcp: FastMCP, emp: Empresa) -> None:
             hoy=db.hoy(emp),
             estatus_excl=", ".join(f"'{e}'" for e in r.get("estatus_excluidos", ["C"])),
             conceptos=", ".join(str(c) for c in r.get("conceptos_devolucion", [7972])),
+            general=r.get("almacen_general", "sin definir"),
         )
 
     # ---------------------------------------------------------------- ventas
@@ -347,6 +356,87 @@ def registrar(mcp: FastMCP, emp: Empresa) -> None:
                       WHERE id_viejo IS NOT NULL GROUP BY 1 HAVING COUNT(*) > 1)""")
         c2, f2, t2 = db.consultar(emp, "SELECT * FROM calidad_kiosko LIMIT 25")
         return (_salida(c1, f1, False) + "\n\n**Ids de orden de compra sin resolver (top 25):**\n\n" + _salida(c2, f2, t2))
+
+    # ---------------------------------------------------------------- inventario y compras
+    @mcp.tool()
+    def existencias(
+        articulo: str | None = None, linea: str | None = None, solo_con_existencia: bool = True, top: int = 50,
+    ) -> str:
+        """Existencias por articulo: almacen general, camionetas, lo que viene en camino, venta diaria de ruta y dias de cobertura.
+
+        Existencia = entradas - salidas acumuladas (SALDOS_IN). La venta diaria es la de ruta, neta de devoluciones y ponderada
+        50/30/20 sobre los ultimos 90 dias. Ordenado por venta diaria (los que mas rotan primero)."""
+        conds, p = [], []
+        _like("clave || ' ' || nombre", articulo, conds, p)
+        _like("linea", linea, conds, p)
+        if solo_con_existencia:
+            conds.append("(exist_general + exist_camionetas) > 0")
+        sql = f"""
+          SELECT clave, nombre AS articulo, linea, ROUND(exist_general,2) AS exist_general,
+                 ROUND(exist_camionetas,2) AS exist_camionetas, ROUND(exist_general + exist_camionetas,2) AS total,
+                 ROUND(en_transito,2) AS en_camino, ROUND(dem_diaria*30,1) AS venta_30d_estimada,
+                 CASE WHEN dem_diaria > 0 THEN ROUND((exist_general + exist_camionetas)/dem_diaria) END AS dias_cobertura
+          FROM art_inventario {_where(conds)} ORDER BY dem_diaria DESC, total DESC LIMIT {int(max(1, min(top, vis)))}"""
+        c, f, t = db.consultar(emp, sql, p)
+        return _salida(c, f, t, "Piezas. dias_cobertura = existencia total / venta diaria; vacio si no hay venta en 90 dias.")
+
+    @mcp.tool()
+    def sugerido_compra(
+        linea: str | None = None, articulo: str | None = None, cobertura_dias: int = 30, lead_time_dias: int = 20,
+        incluir_camionetas: bool = True, top: int = 50,
+    ) -> str:
+        """Sugerido de compra para el almacen general.
+
+        Referencia: venta diaria de ruta (neta de devoluciones, ponderada 50/30/20 sobre 90 dias). Necesidad = venta diaria x
+        (tiempo de entrega + dias de cobertura). Posicion = existencia disponible (general, y camionetas si incluir_camionetas)
+        + ordenes de compra por recibir. Sugerido = necesidad - posicion, redondeado hacia arriba; solo se listan los positivos.
+        No usa estacionalidad ni tendencia (ver diccionario)."""
+        if cobertura_dias < 0 or lead_time_dias < 0:
+            raise ValueError("cobertura_dias y lead_time_dias deben ser >= 0")
+        conds, p = ["dem_diaria > 0"], [bool(incluir_camionetas), lead_time_dias + cobertura_dias]
+        _like("linea", linea, conds, p)
+        _like("clave || ' ' || nombre", articulo, conds, p)
+        sql = f"""
+          WITH b AS (
+            SELECT *, GREATEST(exist_general - comprom_general, 0) + CASE WHEN ? THEN GREATEST(exist_camionetas, 0) ELSE 0 END
+                      + en_transito AS posicion,
+                   dem_diaria * ? AS necesidad
+            FROM art_inventario {_where(conds)})
+          SELECT clave, nombre AS articulo, linea, ROUND(dem_diaria*30,1) AS venta_30d, ROUND(exist_general,1) AS general,
+                 ROUND(exist_camionetas,1) AS camionetas, ROUND(en_transito,1) AS en_camino,
+                 ROUND(posicion,1) AS posicion, ROUND(necesidad,1) AS necesidad,
+                 CAST(CEIL(necesidad - posicion) AS BIGINT) AS sugerido,
+                 proveedor, ROUND(minimo_ucom,1) AS minimo_compra
+          FROM b WHERE necesidad - posicion > 0 ORDER BY dem_diaria DESC LIMIT {int(max(1, min(top, vis)))}"""
+        c, f, t = db.consultar(emp, sql, p)
+        return _salida(c, f, t, f"Cobertura {cobertura_dias} d + entrega {lead_time_dias} d; "
+                                f"camionetas {'incluidas' if incluir_camionetas else 'no incluidas'} en la posicion. Piezas.")
+
+    @mcp.tool()
+    def sin_movimiento(linea: str | None = None, top: int = 50) -> str:
+        """Articulos con existencia que NO se vendieron en ruta en los ultimos 90 dias, ordenados por valor de inventario (costo)."""
+        conds, p = ["(exist_general + exist_camionetas) > 0", "ultima_venta IS NULL"], []
+        _like("linea", linea, conds, p)
+        sql = f"""
+          SELECT clave, nombre AS articulo, linea, ROUND(exist_general,1) AS general, ROUND(exist_camionetas,1) AS camionetas,
+                 ROUND(valor_inventario,2) AS valor_inventario
+          FROM art_inventario {_where(conds)} ORDER BY valor_inventario DESC LIMIT {int(max(1, min(top, vis)))}"""
+        c, f, t = db.consultar(emp, sql, p)
+        return _salida(c, f, t, "Valor al costo de entrada acumulado (SALDOS_IN).")
+
+    @mcp.tool()
+    def stock_camioneta(camioneta: str | None = None, articulo: str | None = None, top: int = 60) -> str:
+        """Que lleva cada camioneta: existencia, comprometido y disponible por articulo."""
+        conds, p = ["s.tipo_almacen = 'camioneta'", "s.existencia <> 0"], []
+        _like("s.almacen", camioneta, conds, p)
+        _like("a.clave || ' ' || a.nombre", articulo, conds, p)
+        sql = f"""
+          SELECT s.almacen AS camioneta, a.clave, a.nombre AS articulo, a.linea, ROUND(s.existencia,2) AS existencia,
+                 ROUND(s.comprometido,2) AS comprometido, ROUND(s.disponible,2) AS disponible
+          FROM stock s JOIN dim_articulo a ON a.articulo_id = s.articulo_id {_where(conds)}
+          ORDER BY s.almacen, s.existencia DESC LIMIT {int(max(1, min(top, vis)))}"""
+        c, f, t = db.consultar(emp, sql, p)
+        return _salida(c, f, t)
 
     # ---------------------------------------------------------------- sql
     @mcp.tool()

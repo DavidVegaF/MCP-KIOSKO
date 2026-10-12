@@ -1,0 +1,5 @@
+-- params:
+SELECT pc.ARTICULO_ID AS articulo_id, pc.PROVEEDOR_ID AS proveedor_id, pc.UNIDADES_MIN_UCOM AS minimo_ucom,
+       pc.CONTENIDO_UNIDAD_COMPRA AS contenido, pc.ES_PROV_PREDET AS predeterminado, d.PRECIO_UCOM AS precio_ucom
+FROM PRECIOS_COMPRA pc
+LEFT JOIN PRECIOS_COMPRA_DET d ON d.PRECIO_COMPRA_ID = pc.PRECIO_COMPRA_ID

@@ -1,0 +1,2 @@
+-- params:
+SELECT PROVEEDOR_ID AS proveedor_id, TRIM(NOMBRE) AS nombre FROM PROVEEDORES

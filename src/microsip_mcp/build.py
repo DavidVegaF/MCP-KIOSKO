@@ -24,6 +24,7 @@ def renderizar(plantilla: str, parquet: Path, reglas: dict, hoy: str) -> str:
         "{{ESTATUS_EXCLUIDOS}}": _lista_sql(reglas.get("estatus_excluidos", ["C"]), True),
         "{{CONCEPTOS_DEVOLUCION}}": _lista_sql(reglas.get("conceptos_devolucion", [7972]), False),
         "{{ALMACENES_EXCLUIDOS}}": _lista_sql(reglas.get("almacenes_excluidos", []), False),
+        "{{ALMACEN_GENERAL}}": str(int(reglas.get("almacen_general", -1))),
     }
     for k, v in sub.items():
         plantilla = plantilla.replace(k, v)

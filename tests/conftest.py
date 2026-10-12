@@ -39,6 +39,7 @@ token_env = "MCP_TOKEN_KORNER"
 estatus_excluidos = ["C"]
 conceptos_devolucion = [7972]
 almacenes_excluidos = [1]
+almacen_general = 1
 """)
     # catalogo de kioscos: 14109 nuevo / viejo 1409; 12067; viejo 54059 repetido (ambiguo); cafeteria 0,0
     _w(pqd, "dim_kiosko", {
@@ -54,9 +55,10 @@ almacenes_excluidos = [1]
     _w(pqd, "dim_almacen", {"almacen_id": [1, 11, 12, 13], "nombre": ["ALMACEN GENERAL", "Camioneta 1", "Camioneta 2", "Camioneta 3"]})
     _w(pqd, "dim_vendedor", {"vendedor_id": [1, 2], "nombre": ["VENDEDOR A", "VENDEDOR B"]})
     _w(pqd, "dim_articulo", {
-        "articulo_id": [100, 200, 300], "clave": ["2000112", "2000034", "2002784"],
-        "nombre": ["BARAJA ESPAÑOLA", "GLOBO AGUA MAGIC", "SPINNER GRANDE"], "linea": ["JUEGOS", "GLOBOS", "JUGUETES"],
-        "grupo": ["G1", "G1", "G2"], "estatus": ["A"] * 3, "es_juego": ["N"] * 3,
+        "articulo_id": [100, 200, 300, 400], "clave": ["2000112", "2000034", "2002784", "2000400"],
+        "nombre": ["BARAJA ESPAÑOLA", "GLOBO AGUA MAGIC", "SPINNER GRANDE", "PELOTA SIN VENTA"],
+        "linea": ["JUEGOS", "GLOBOS", "JUGUETES", "JUGUETES"],
+        "grupo": ["G1", "G1", "G2", "G2"], "estatus": ["A"] * 4, "es_juego": ["N"] * 4,
     })
     # remisiones: 1) id nuevo 14109, cam 11 VENDEDOR A; 2) id viejo 1409 (= mismo kiosko), cam 11 VENDEDOR A;
     # 3) 12067 cam 12 JAZ; 4) viejo ambiguo 54059 -> sin kiosko; 5) id desconocido 99999; 6) CANCELADA (excluida)
@@ -81,5 +83,19 @@ almacenes_excluidos = [1]
     _w(pqd, "doctos_in_det", {
         "docto_in_id": [10, 11, 12], "articulo_id": [100, 200, 100], "unidades": [1.0, 2.0, 50.0], "costo_total": [10.0, 20.0, 500.0],
     })
+    # inventario: art 100 -> general 100 (+5 en camioneta 1) y 10 por recibir; art 200 -> general 2; art 300 -> sin stock
+    _w(pqd, "saldos_in", {
+        "articulo_id": [100, 100, 100, 200, 400], "almacen_id": [1, 11, 11, 1, 1], "ano": [2026] * 5, "mes": [9, 9, 10, 9, 9],
+        "entradas_unidades": [100.0, 20.0, 0.0, 2.0, 7.0], "salidas_unidades": [0.0, 0.0, 15.0, 0.0, 0.0],
+        "entradas_costo": [1000.0, 200.0, 0.0, 40.0, 70.0], "salidas_costo": [0.0, 0.0, 150.0, 0.0, 0.0],
+    })
+    _w(pqd, "comprom_articulos", {"articulo_id": [100], "almacen_id": [1], "unidades_comprom": [0.0]})
+    _w(pqd, "compra_pendiente", {
+        "articulo_id": [100], "docto_cm_id": [900], "folio": ["OC1"], "fecha": [D(2026, 10, 2)], "proveedor_id": [5],
+        "estatus": ["R"], "unidades": [10.0], "unidades_a_rec": [10.0],
+    })
+    _w(pqd, "proveedores", {"proveedor_id": [5], "nombre": ["PROVEEDOR UNO"]})
+    _w(pqd, "precios_compra", {"articulo_id": [100], "proveedor_id": [5], "minimo_ucom": [12.0], "contenido": [12.0],
+                               "predeterminado": [True], "precio_ucom": [9.0]})
     construir(base / "empresas" / "korner.toml", pqd, RAIZ / "sql" / "korner")
     return load_empresa(base / "empresas" / "korner.toml")

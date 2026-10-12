@@ -29,10 +29,11 @@ def run(coro):
     return asyncio.run(coro)
 
 
-def test_once_herramientas_registradas(empresa):
+def test_herramientas_registradas(empresa):
     nombres = {t.name for t in run(construir_mcp(empresa).list_tools())}
     assert nombres == {"diccionario", "ventas", "ranking_camionetas", "ranking_vendedores", "productos_ruta",
-                       "devoluciones_ruta", "kiosko_geolocalizar", "visitas", "articulo", "calidad_datos", "sql"}
+                       "devoluciones_ruta", "kiosko_geolocalizar", "visitas", "articulo", "calidad_datos", "sql",
+                       "existencias", "sugerido_compra", "sin_movimiento", "stock_camioneta"}
 
 
 def test_ventas_por_camioneta(empresa):
@@ -135,7 +136,7 @@ def test_http_cliente_mcp_real(servidor):
                 res = await s.call_tool("ranking_camionetas", {"desde": "2026-10-01", "hasta": "2026-10-03"})
                 return len(tools.tools), texto(res)
     n, out = run(go())
-    assert n == 11 and "Camioneta 1" in out
+    assert n == 15 and "Camioneta 1" in out
 
 
 def test_http_host_publico_permitido_y_host_ajeno_rechazado(servidor):
@@ -145,3 +146,36 @@ def test_http_host_publico_permitido_y_host_ajeno_rechazado(servidor):
     ok = httpx.post(f"{servidor}/{TOKEN}/mcp", json=body, headers={**h, "Host": "mac.example.ts.net"})
     mal = httpx.post(f"{servidor}/{TOKEN}/mcp", json=body, headers={**h, "Host": "evil.example.com"})
     assert ok.status_code == 200 and mal.status_code in (400, 421)
+
+
+def test_existencias_general_camioneta_y_cobertura(empresa):
+    out = run(llamar(empresa, "existencias", articulo="baraja"))
+    fila = [l for l in out.splitlines() if l.startswith("| 2000112")][0]
+    assert "| 100.00 |" in fila and "| 5.00 |" in fila and "| 105.00 |" in fila and "| 10.00 |" in fila   # general, camioneta, total, en camino
+
+
+def test_sugerido_compra_formula(empresa):
+    out = run(llamar(empresa, "sugerido_compra"))
+    filas = {l.split("|")[1].strip(): l for l in out.splitlines() if l.startswith("| 200")}
+    # globo (200): venta neta 12 pzas en 0-30 d -> dem = 0.5*12/30 = 0.2/dia; necesidad 0.2*50 = 10; posicion = 2 -> sugerido 8
+    assert "2000034" in filas and filas["2000034"].split("|")[10].strip() == "8"
+    # spinner (300): 9 pzas (RM3 4 + RM5 5) -> 0.15/dia; necesidad 7.5; posicion 0 -> 8
+    assert "2002784" in filas and filas["2002784"].split("|")[10].strip() == "8"
+    # baraja (100): posicion 100+5+10 cubre la necesidad -> no se sugiere
+    assert "2000112" not in filas
+
+
+def test_sugerido_parametros_y_camionetas(empresa):
+    # con cobertura 0 y entrega 0 la necesidad es 0: no se sugiere nada
+    assert "Sin resultados" in run(llamar(empresa, "sugerido_compra", cobertura_dias=0, lead_time_dias=0))
+    with pytest.raises(Exception, match=">= 0"):
+        run(llamar(empresa, "sugerido_compra", cobertura_dias=-1))
+
+
+def test_sin_movimiento_y_stock_camioneta(empresa):
+    sm = run(llamar(empresa, "sin_movimiento"))
+    fila = [l for l in sm.splitlines() if l.startswith("| 2000400")][0]     # tiene 7 pzas en el general y ninguna venta
+    assert "| 7.0 |" in fila and "| 70.00 |" in fila
+    assert "2000112" not in sm                                              # la baraja si se vende: no aparece
+    sc = run(llamar(empresa, "stock_camioneta", camioneta="camioneta 1"))
+    assert "2000112" in sc and "| 5.00 |" in sc
