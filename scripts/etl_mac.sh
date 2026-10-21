@@ -10,9 +10,16 @@ LOG="data/$EMP/etl_last_run.log"
 mkdir -p "data/$EMP"
 {
   echo "==== INICIO $(date '+%F %T') ===="
-  rm -rf "data/$EMP/parquet.new"
-  if ! .venv/bin/python etl/extract.py --config "empresas/$EMP.toml" --queries "etl/$EMP/queries" \
-        --ini etl/etl.ini --out "data/$EMP/parquet.new"; then
+  # Si el enlace con Firebird (ZeroTier) falla, reintenta: INTENTOS veces, ESPERA segundos entre intentos.
+  ok=0
+  for i in $(seq 1 "${INTENTOS:-6}"); do
+    rm -rf "data/$EMP/parquet.new"
+    if .venv/bin/python etl/extract.py --config "empresas/$EMP.toml" --queries "etl/$EMP/queries" \
+          --ini etl/etl.ini --out "data/$EMP/parquet.new"; then ok=1; break; fi
+    echo "ERROR extract (intento $i de ${INTENTOS:-6}) $(date '+%F %T')"
+    [ "$i" -lt "${INTENTOS:-6}" ] && sleep "${ESPERA:-600}"
+  done
+  if [ "$ok" -ne 1 ]; then
     echo "ERROR extract"; echo "==== FIN CON ERROR $(date '+%F %T') ===="; exit 1
   fi
   if ! scripts/rebuild.sh "$EMP"; then
