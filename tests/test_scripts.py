@@ -42,5 +42,5 @@ def test_simulacion_no_escribe(tmp_path):
 
 
 def test_scripts_bash_con_sintaxis_valida():
-    for s in ("rebuild.sh", "run_mcp.sh", "instalar_mac.sh", "etl_mac.sh"):
+    for s in ("rebuild.sh", "run_mcp.sh", "instalar_mac.sh", "etl_mac.sh", "etl_via_ssh.sh", "instalar_ssh_local.sh"):
         assert subprocess.run(["bash", "-n", str(RAIZ / "scripts" / s)]).returncode == 0, s

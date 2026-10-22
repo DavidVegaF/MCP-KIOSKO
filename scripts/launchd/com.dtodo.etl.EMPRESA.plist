@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Extraccion nocturna directa desde la Mac. Copiar a ~/Library/LaunchAgents/com.dtodo.etl.korner.plist
+<!-- Extraccion nocturna directa desde la Mac (entra por ssh local: launchd no puede alcanzar la red local; ver instalar_ssh_local.sh). Copiar a ~/Library/LaunchAgents/com.dtodo.etl.korner.plist
      (cambiar EMPRESA y la ruta) y: launchctl load -w <archivo>. Corre a las 02:30 (DTODO usa 02:00). -->
 <plist version="1.0"><dict>
   <key>Label</key><string>com.dtodo.etl.EMPRESA</string>
   <key>ProgramArguments</key><array>
-    <string>/Users/dtodo-mac/microsip-mcp/scripts/etl_mac.sh</string><string>EMPRESA</string></array>
+    <string>/Users/dtodo-mac/microsip-mcp/scripts/etl_via_ssh.sh</string><string>EMPRESA</string></array>
   <key>StartCalendarInterval</key><dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>30</integer></dict>
   <key>RunAtLoad</key><false/>
 </dict></plist>
