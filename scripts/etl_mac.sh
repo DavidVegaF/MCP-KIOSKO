@@ -7,8 +7,9 @@ EMP="${1:?uso: etl_mac.sh <empresa>}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 LOG="data/$EMP/etl_last_run.log"
+HIST="data/$EMP/etl_historial.log"      # una linea por corrida (no se sobreescribe)
 mkdir -p "data/$EMP"
-{
+(
   echo "==== INICIO $(date '+%F %T') ===="
   # Si el enlace con Firebird (ZeroTier) falla, reintenta: INTENTOS veces, ESPERA segundos entre intentos.
   ok=0
@@ -26,4 +27,8 @@ mkdir -p "data/$EMP"
     echo "ERROR rebuild"; echo "==== FIN CON ERROR $(date '+%F %T') ===="; exit 1
   fi
   echo "==== FIN $(date '+%F %T') ===="
-} > "$LOG" 2>&1
+)> "$LOG" 2>&1
+RC=$?
+echo "$(date '+%F %T') $EMP $([ "$RC" -eq 0 ] && echo OK || echo ERROR)" >> "$HIST"
+exit "$RC"
+
